@@ -82,13 +82,23 @@ export function VoiceAgent() {
       store.setTranscript(transcript)
       store.addLog(`Transcription complete: "${transcript.slice(0, 50)}..."`, 'success')
 
-      // Detect intent
-      store.setLoadingState('analyzing')
-      store.addLog('Analyzing intent...', 'info')
-      
-      const intent = await detectIntent(transcript, apiKeyRef.current)
+      // Resolve intent — respect manual override, fall back to AI detection
+      let intent: 'note' | 'publish'
+      const forcedMode = store.forcedMode
+      if (forcedMode === 'note') {
+        intent = 'note'
+        store.addLog('Mode: Note (manual)', 'info')
+      } else if (forcedMode === 'publish') {
+        intent = 'publish'
+        store.addLog('Mode: Publish (manual)', 'info')
+      } else {
+        store.setLoadingState('analyzing')
+        store.addLog('Detecting intent automatically...', 'info')
+        const detected = await detectIntent(transcript, apiKeyRef.current)
+        intent = detected === 'note' ? 'note' : 'publish'
+        store.addLog(`Intent detected: ${intent}`, 'success')
+      }
       store.setIntent(intent)
-      store.addLog(`Intent detected: ${intent}`, 'success')
 
       if (intent === 'note') {
         // Note flow — save the verbatim transcript, no summarisation
@@ -241,26 +251,58 @@ export function VoiceAgent() {
             </p>
           </div>
 
-          {/* Mode indicators */}
-          <div className="flex items-center justify-center gap-4">
-            <div className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-full border transition-colors",
-              store.intent === 'publish' 
-                ? "border-research bg-research/10 text-research" 
-                : "border-border text-muted-foreground"
-            )}>
-              <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">Publish Mode</span>
+          {/* Mode selector */}
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 p-1 rounded-full bg-secondary border border-border">
+              {/* Auto */}
+              <button
+                onClick={() => store.setForcedMode('auto')}
+                disabled={store.isRecording || isProcessing}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed",
+                  store.forcedMode === 'auto'
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Auto
+              </button>
+              {/* Publish */}
+              <button
+                onClick={() => store.setForcedMode('publish')}
+                disabled={store.isRecording || isProcessing}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed",
+                  store.forcedMode === 'publish'
+                    ? "bg-research text-research-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Publish
+              </button>
+              {/* Note */}
+              <button
+                onClick={() => store.setForcedMode('note')}
+                disabled={store.isRecording || isProcessing}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed",
+                  store.forcedMode === 'note'
+                    ? "bg-note text-note-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Lightbulb className="w-3.5 h-3.5" />
+                Note
+              </button>
             </div>
-            <div className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-full border transition-colors",
-              store.intent === 'note' 
-                ? "border-note bg-note/10 text-note" 
-                : "border-border text-muted-foreground"
-            )}>
-              <Lightbulb className="w-4 h-4" />
-              <span className="text-sm font-medium">Note Mode</span>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              {store.forcedMode === 'auto'
+                ? "AI will detect mode from your speech"
+                : store.forcedMode === 'publish'
+                ? "Every recording will be processed for publishing"
+                : "Every recording will be saved as a verbatim note"}
+            </p>
           </div>
 
           {/* Voice recorder */}

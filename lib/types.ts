@@ -28,6 +28,8 @@ export interface TemplateData {
 
 export type IntentType = 'publish' | 'note' | 'unknown'
 
+export type ForcedMode = 'auto' | 'publish' | 'note'
+
 export type LoadingState = 
   | 'idle' 
   | 'recording' 
@@ -72,10 +74,12 @@ export interface AppState {
   
   // UI state
   activeTab: TemplateType
+  forcedMode: ForcedMode
   logs: LogEntry[]
   
   // Actions
   setIsRecording: (isRecording: boolean) => void
+  setForcedMode: (mode: ForcedMode) => void
   setRecordingTime: (time: number) => void
   setTranscript: (transcript: string) => void
   setIntent: (intent: IntentType) => void

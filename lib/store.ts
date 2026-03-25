@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType } from './types'
+import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode } from './types'
 
 const formatTime = () => {
   return new Date().toLocaleTimeString('en-US', { 
@@ -35,10 +35,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // UI state
   activeTab: 'social',
+  forcedMode: 'auto' as ForcedMode,
   logs: [],
   
   // Actions
   setIsRecording: (isRecording: boolean) => set({ isRecording }),
+  setForcedMode: (forcedMode: ForcedMode) => set({ forcedMode }),
   setRecordingTime: (recordingTime: number) => set({ recordingTime }),
   setTranscript: (transcript: string) => set({ transcript }),
   setIntent: (intent: IntentType) => set({ intent }),
