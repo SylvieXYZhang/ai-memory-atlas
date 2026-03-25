@@ -7,6 +7,16 @@ export interface NoteRecord {
   createdAt: string
 }
 
+export interface PublishRecord {
+  id: string
+  transcript: string
+  summary: string
+  research: ResearchData | null
+  timestamp: number
+  createdAt: string
+  sourceNoteId?: string // if published from a note
+}
+
 export interface SearchResult {
   note: NoteRecord
   similarity: number
@@ -72,6 +82,9 @@ export interface AppState {
   currentNote: NoteRecord | null
   relatedNotes: SearchResult[]
   
+  // Publish history
+  publishHistory: PublishRecord[]
+  
   // UI state
   activeTab: TemplateType
   forcedMode: ForcedMode
@@ -90,6 +103,8 @@ export interface AppState {
   setCurrentNote: (note: NoteRecord | null) => void
   setRelatedNotes: (notes: SearchResult[]) => void
   setActiveTab: (tab: TemplateType) => void
+  addPublishRecord: (record: PublishRecord) => void
+  setPublishHistory: (history: PublishRecord[]) => void
   addLog: (message: string, type: LogEntry['type']) => void
   clearLogs: () => void
   reset: () => void

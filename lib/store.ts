@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode } from './types'
+import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode, PublishRecord } from './types'
 
 const formatTime = () => {
   return new Date().toLocaleTimeString('en-US', { 
@@ -33,6 +33,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentNote: null,
   relatedNotes: [],
   
+  // Publish history
+  publishHistory: [],
+  
   // UI state
   activeTab: 'social',
   forcedMode: 'auto' as ForcedMode,
@@ -51,6 +54,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentNote: (currentNote: NoteRecord | null) => set({ currentNote }),
   setRelatedNotes: (relatedNotes: SearchResult[]) => set({ relatedNotes }),
   setActiveTab: (activeTab: TemplateType) => set({ activeTab }),
+  
+  addPublishRecord: (record: PublishRecord) => set((state) => ({
+    publishHistory: [record, ...state.publishHistory].slice(0, 50) // Keep last 50
+  })),
+  setPublishHistory: (publishHistory: PublishRecord[]) => set({ publishHistory }),
   
   addLog: (message: string, type: LogEntry['type'] = 'info') => {
     const entry: LogEntry = {
