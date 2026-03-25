@@ -9,10 +9,9 @@ import { ResultTabs } from './result-tabs'
 import { NoteDisplay } from './note-display'
 import { HistoryPanel } from './history-panel'
 import { MagicButton } from './magic-button'
+import { SettingsPortal } from './settings-portal'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { FieldGroup, Field, FieldLabel } from '@/components/ui/field'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 // Services
@@ -21,20 +20,29 @@ import { detectIntent, generateSummary, performDeepResearch } from '@/lib/servic
 import { searchSimilarNotes } from '@/lib/services/vector-search'
 import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
 import type { TemplateData, PublishRecord } from '@/lib/types'
+import { 
+  type UserAPIConfig, 
+  loadAPIConfig, 
+  getAPIKey, 
+  getAssignment,
+  getUnconfiguredFunctions,
+  type FunctionType
+} from '@/lib/api-config'
 
-const API_KEY_STORAGE_KEY = 'voiceagent_api_key'
 const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
 
 export function VoiceAgent() {
   const store = useAppStore()
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const apiKeyRef = useRef<string>('')
+  const [apiConfig, setApiConfig] = useState<UserAPIConfig | null>(null)
   const [isPublishingNote, setIsPublishingNote] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // Load API key and notes on mount
+  // Load API config and notes on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      apiKeyRef.current = localStorage.getItem(API_KEY_STORAGE_KEY) || ''
+      const config = loadAPIConfig()
+      setApiConfig(config)
       store.setNotes(getNotes())
       
       // Load publish history
@@ -69,6 +77,13 @@ export function VoiceAgent() {
     }
   }, [store.isRecording, store.recordingTime])
 
+  // Helper to get API key for a specific function
+  const getKeyForFunction = useCallback((func: FunctionType): string => {
+    if (!apiConfig) return ''
+    const assignment = getAssignment(apiConfig, func)
+    return getAPIKey(apiConfig, assignment.provider)
+  }, [apiConfig])
+
   const handleStartRecording = useCallback(() => {
     store.reset()
     store.setIsRecording(true)
@@ -85,10 +100,11 @@ export function VoiceAgent() {
     try {
       // Transcribe audio
       let transcript: string
-      if (apiKeyRef.current) {
-        transcript = await transcribeAudio(audioBlob, apiKeyRef.current)
+      const asrKey = getKeyForFunction('asr')
+      if (asrKey) {
+        transcript = await transcribeAudio(audioBlob, asrKey)
       } else {
-        store.addLog('No API key - using demo mode', 'warning')
+        store.addLog('No ASR API key - using demo mode', 'warning')
         transcript = await mockTranscribeAudio(store.recordingTime * 1000)
       }
       
@@ -107,7 +123,8 @@ export function VoiceAgent() {
       } else {
         store.setLoadingState('analyzing')
         store.addLog('Detecting intent automatically...', 'info')
-        const detected = await detectIntent(transcript, apiKeyRef.current)
+        const intentKey = getKeyForFunction('intent')
+        const detected = await detectIntent(transcript, intentKey)
         intent = detected === 'note' ? 'note' : 'publish'
         store.addLog(`Intent detected: ${intent}`, 'success')
       }
@@ -137,7 +154,8 @@ export function VoiceAgent() {
         store.setLoadingState('generating-summary')
         store.addLog('Generating quick summary...', 'info')
         
-        const summary = await generateSummary(transcript, apiKeyRef.current)
+        const summaryKey = getKeyForFunction('summary')
+        const summary = await generateSummary(transcript, summaryKey)
         store.setSummary(summary)
         store.addLog('Summary generated', 'success')
         
@@ -171,7 +189,8 @@ export function VoiceAgent() {
     store.addLog('This may take 30-60 seconds...', 'warning')
 
     try {
-      const research = await performDeepResearch(store.transcript, apiKeyRef.current)
+      const researchKey = getKeyForFunction('research')
+      const research = await performDeepResearch(store.transcript, researchKey)
       store.setResearchData(research)
       store.addLog('Deep research complete!', 'success')
       store.setLoadingState('complete')
@@ -182,13 +201,15 @@ export function VoiceAgent() {
     }
   }, [store.transcript])
 
-  const handleSaveApiKey = (key: string) => {
-    apiKeyRef.current = key
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(API_KEY_STORAGE_KEY, key)
+  const handleConfigChange = useCallback((newConfig: UserAPIConfig) => {
+    setApiConfig(newConfig)
+    const unconfigured = getUnconfiguredFunctions(newConfig)
+    if (unconfigured.length === 0) {
+      store.addLog('All API functions configured!', 'success')
+    } else {
+      store.addLog(`${4 - unconfigured.length}/4 functions configured`, 'info')
     }
-    store.addLog('API key saved', 'success')
-  }
+  }, [])
 
   const handleLoadDemoNotes = useCallback(() => {
     const notes = seedDemoNotes()
@@ -214,7 +235,8 @@ export function VoiceAgent() {
 
     try {
       // Generate summary for the note
-      const summary = await generateSummary(note.text, apiKeyRef.current)
+      const summaryKey = getKeyForFunction('summary')
+      const summary = await generateSummary(note.text, summaryKey)
       
       // Create publish record
       const record: PublishRecord = {
@@ -280,31 +302,24 @@ export function VoiceAgent() {
               <span className="hidden sm:inline">Load Demo Notes</span>
             </Button>
 
-            <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Settings className="w-4 h-4" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Settings</DialogTitle>
-              </DialogHeader>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel>API Key (Alibaba DashScope)</FieldLabel>
-                  <Input
-                    type="password"
-                    placeholder="sk-..."
-                    defaultValue={apiKeyRef.current}
-                    onChange={(e) => handleSaveApiKey(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty for demo mode with mock responses
-                  </p>
-                </Field>
-              </FieldGroup>
-            </DialogContent>
+            <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <Settings className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden">
+                <DialogHeader>
+                  <DialogTitle>API Settings</DialogTitle>
+                  <DialogDescription>
+                    Configure API keys and model assignments for each function.
+                  </DialogDescription>
+                </DialogHeader>
+                <SettingsPortal 
+                  onConfigChange={handleConfigChange}
+                  onClose={() => setSettingsOpen(false)}
+                />
+              </DialogContent>
             </Dialog>
           </div>
         </div>
