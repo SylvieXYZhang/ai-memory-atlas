@@ -1,15 +1,18 @@
 'use client'
 
-import { StickyNote, Clock, Link2, BookOpen, Hash } from 'lucide-react'
+import { StickyNote, Clock, Link2, BookOpen, Hash, FileText } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { NoteRecord, SearchResult } from '@/lib/types'
 
 interface NoteDisplayProps {
   currentNote: NoteRecord
   relatedNotes: SearchResult[]
+  onPublish?: (noteId: string) => void
+  isPublishing?: boolean
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -39,7 +42,7 @@ function SimilarityBar({ value }: { value: number }) {
   )
 }
 
-export function NoteDisplay({ currentNote, relatedNotes }: NoteDisplayProps) {
+export function NoteDisplay({ currentNote, relatedNotes, onPublish, isPublishing }: NoteDisplayProps) {
   const wordCount = currentNote.text.trim().split(/\s+/).filter(Boolean).length
 
   return (
@@ -64,7 +67,7 @@ export function NoteDisplay({ currentNote, relatedNotes }: NoteDisplayProps) {
                 {currentNote.text}
               </blockquote>
 
-              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
                 <span className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {formatRelativeTime(currentNote.timestamp)}
@@ -78,6 +81,21 @@ export function NoteDisplay({ currentNote, relatedNotes }: NoteDisplayProps) {
                   <span className="font-mono">{currentNote.id.slice(0, 8)}</span>
                 </span>
               </div>
+
+              {/* Publish button */}
+              {onPublish && (
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => onPublish(currentNote.id)}
+                    disabled={isPublishing}
+                    className="bg-research hover:bg-research/90 text-research-foreground gap-2"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    {isPublishing ? 'Publishing...' : 'Publish as Draft'}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

@@ -7,6 +7,7 @@ import { VoiceRecorder } from './voice-recorder'
 import { DebugPanel } from './debug-panel'
 import { ResultTabs } from './result-tabs'
 import { NoteDisplay } from './note-display'
+import { HistoryPanel } from './history-panel'
 import { MagicButton } from './magic-button'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,9 +20,10 @@ import { transcribeAudio, mockTranscribeAudio } from '@/lib/services/asr'
 import { detectIntent, generateSummary, performDeepResearch } from '@/lib/services/llm'
 import { searchSimilarNotes } from '@/lib/services/vector-search'
 import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
-import type { TemplateData } from '@/lib/types'
+import type { TemplateData, PublishRecord } from '@/lib/types'
 
 const API_KEY_STORAGE_KEY = 'voiceagent_api_key'
+const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
 
 export function VoiceAgent() {
   const store = useAppStore()
@@ -33,6 +35,16 @@ export function VoiceAgent() {
     if (typeof window !== 'undefined') {
       apiKeyRef.current = localStorage.getItem(API_KEY_STORAGE_KEY) || ''
       store.setNotes(getNotes())
+      
+      // Load publish history
+      const saved = localStorage.getItem(PUBLISH_HISTORY_KEY)
+      if (saved) {
+        try {
+          store.setPublishHistory(JSON.parse(saved))
+        } catch (error) {
+          console.error('[v0] Error loading publish history:', error)
+        }
+      }
     }
   }, [])
 
