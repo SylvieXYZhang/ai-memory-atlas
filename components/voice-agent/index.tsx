@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { Settings, Volume2, FileText, Lightbulb } from 'lucide-react'
+import { Settings, Volume2, FileText, Lightbulb, FlaskConical } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { VoiceRecorder } from './voice-recorder'
 import { DebugPanel } from './debug-panel'
@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 import { transcribeAudio, mockTranscribeAudio } from '@/lib/services/asr'
 import { detectIntent, generateSummary, performDeepResearch } from '@/lib/services/llm'
 import { searchSimilarNotes } from '@/lib/services/vector-search'
-import { getNotes, saveNote } from '@/lib/services/storage'
+import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
 import type { TemplateData } from '@/lib/types'
 
 const API_KEY_STORAGE_KEY = 'voiceagent_api_key'
@@ -153,6 +153,13 @@ export function VoiceAgent() {
     store.addLog('API key saved', 'success')
   }
 
+  const handleLoadDemoNotes = useCallback(() => {
+    const notes = seedDemoNotes()
+    store.setNotes(notes)
+    store.addLog(`Loaded ${notes.length} demo notes with semantic overlap`, 'success')
+    store.addLog('Try saying something about AI, startups, or note-taking to see connections!', 'info')
+  }, [])
+
   const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
   const isDeepResearching = store.loadingState === 'deep-research'
   const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
@@ -179,7 +186,18 @@ export function VoiceAgent() {
             </div>
           </div>
 
-          <Dialog>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLoadDemoNotes}
+              className="gap-2"
+            >
+              <FlaskConical className="w-4 h-4" />
+              <span className="hidden sm:inline">Load Demo Notes</span>
+            </Button>
+
+            <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" size="icon">
                 <Settings className="w-4 h-4" />
@@ -204,7 +222,8 @@ export function VoiceAgent() {
                 </Field>
               </FieldGroup>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
       </header>
 
