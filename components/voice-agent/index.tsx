@@ -91,20 +91,23 @@ export function VoiceAgent() {
       store.addLog(`Intent detected: ${intent}`, 'success')
 
       if (intent === 'note') {
-        // Note flow
+        // Note flow — save the verbatim transcript, no summarisation
         store.setLoadingState('saving-note')
-        store.addLog('Saving note...', 'info')
+        store.addLog('Saving verbatim note...', 'info')
         
-        const note = saveNote(transcript)
+        const note = saveNote(transcript)     // exact words, no processing
         const notes = getNotes()
         store.setNotes(notes)
         store.setCurrentNote(note)
         
-        // Find related notes
+        // Find semantically related notes from the knowledge base
         const related = searchSimilarNotes(transcript, notes, note.id)
         store.setRelatedNotes(related)
         
-        store.addLog(`Note saved! Found ${related.length} related notes`, 'success')
+        store.addLog(
+          `Note saved (${transcript.split(/\s+/).length} words). ${related.length} semantic connection${related.length !== 1 ? 's' : ''} found.`,
+          'success'
+        )
         store.setLoadingState('complete')
       } else {
         // Publish flow
@@ -214,8 +217,8 @@ export function VoiceAgent() {
               Your Voice, Your Research
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto text-pretty">
-              Speak your research topic or note. Our AI will transcribe, analyze, 
-              and either generate comprehensive reports or save your ideas with semantic connections.
+              Speak freely. In Publish Mode the AI researches and drafts content. 
+              In Note Mode your exact words are saved and automatically linked to semantically related ideas.
             </p>
           </div>
 

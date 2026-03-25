@@ -1,9 +1,10 @@
 'use client'
 
-import { StickyNote, Clock, Sparkles } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { StickyNote, Clock, Link2, BookOpen, Hash } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
 import type { NoteRecord, SearchResult } from '@/lib/types'
 
 interface NoteDisplayProps {
@@ -11,74 +12,137 @@ interface NoteDisplayProps {
   relatedNotes: SearchResult[]
 }
 
-export function NoteDisplay({ currentNote, relatedNotes }: NoteDisplayProps) {
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}
+
+function SimilarityBar({ value }: { value: number }) {
   return (
-    <div className="space-y-6">
-      {/* Current note */}
-      <Card className="border-note/30 bg-note/5">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <StickyNote className="w-5 h-5 text-note" />
-            <CardTitle className="text-lg text-note">Note Saved</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-foreground/90 leading-relaxed">{currentNote.text}</p>
-          <div className="flex items-center gap-1.5 mt-4 text-sm text-muted-foreground">
-            <Clock className="w-4 h-4" />
-            <span>{currentNote.createdAt}</span>
+    <div className="flex items-center gap-2 mt-2">
+      <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
+        <div
+          className="h-full bg-related rounded-full transition-all duration-500"
+          style={{ width: `${Math.min(value, 100)}%` }}
+        />
+      </div>
+      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+        {Math.round(value)}%
+      </span>
+    </div>
+  )
+}
+
+export function NoteDisplay({ currentNote, relatedNotes }: NoteDisplayProps) {
+  const wordCount = currentNote.text.trim().split(/\s+/).filter(Boolean).length
+
+  return (
+    <div className="space-y-5">
+      {/* Current note — verbatim transcript */}
+      <Card className="border-note/40 bg-note/5">
+        <CardContent className="pt-5 pb-5">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-md bg-note/20 flex items-center justify-center">
+              <StickyNote className="w-4 h-4 text-note" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-semibold text-note">Note saved</span>
+                <Badge variant="outline" className="text-xs border-note/30 text-note/80 bg-note/10">
+                  verbatim
+                </Badge>
+              </div>
+
+              {/* The exact words the user said */}
+              <blockquote className="text-foreground leading-relaxed text-base border-l-2 border-note/50 pl-3">
+                {currentNote.text}
+              </blockquote>
+
+              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {formatRelativeTime(currentNote.timestamp)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <BookOpen className="w-3 h-3" />
+                  {wordCount} {wordCount === 1 ? 'word' : 'words'}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Hash className="w-3 h-3" />
+                  <span className="font-mono">{currentNote.id.slice(0, 8)}</span>
+                </span>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Related notes */}
-      {relatedNotes.length > 0 && (
+      {/* Semantic connections */}
+      {relatedNotes.length > 0 ? (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-related" />
-            <h3 className="text-lg font-medium">Related Ideas</h3>
-            <Badge variant="secondary" className="text-xs">
-              {relatedNotes.length} found
+          {/* Header */}
+          <div className="flex items-center gap-2 px-1">
+            <Link2 className="w-4 h-4 text-related" />
+            <h3 className="text-sm font-semibold text-foreground">Semantic connections</h3>
+            <Badge
+              variant="outline"
+              className="text-xs border-related/40 text-related bg-related/10 ml-auto"
+            >
+              {relatedNotes.length} linked
             </Badge>
           </div>
 
-          <ScrollArea className="h-[300px]">
-            <div className="space-y-3 pr-4">
-              {relatedNotes.map((result, index) => (
-                <Card 
-                  key={result.note.id} 
-                  className="border-related/20 bg-related/5 hover:bg-related/10 transition-colors"
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-foreground/80 text-sm line-clamp-3">
+          {/* Connection line visual */}
+          <div className="relative">
+            {/* Vertical connector */}
+            <div className="absolute left-4 top-0 bottom-0 w-px bg-gradient-to-b from-note/60 via-related/40 to-transparent" />
+
+            <ScrollArea className="max-h-80">
+              <div className="space-y-2 pl-10 pr-1">
+                {relatedNotes.map((result, index) => (
+                  <div key={result.note.id} className="relative">
+                    {/* Horizontal connector dot */}
+                    <div className={cn(
+                      "absolute -left-6 top-4 w-2 h-2 rounded-full border-2 border-related",
+                      index === 0 ? "bg-related" : "bg-background"
+                    )} />
+                    {/* Horizontal line */}
+                    <div className="absolute -left-[18px] top-[18px] w-4 h-px bg-related/40" />
+
+                    <Card className="border-related/20 bg-related/5 hover:bg-related/10 transition-colors">
+                      <CardContent className="px-4 py-3">
+                        <p className="text-sm text-foreground/85 leading-relaxed">
                           {result.note.text}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {result.note.createdAt}
-                        </p>
-                      </div>
-                      <Badge 
-                        variant="outline" 
-                        className="shrink-0 border-related/50 text-related bg-related/10"
-                      >
-                        {Math.round(result.similarity)}% match
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </ScrollArea>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {formatRelativeTime(result.note.timestamp)}
+                          </span>
+                        </div>
+                        <SimilarityBar value={result.similarity} />
+                      </CardContent>
+                    </Card>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
         </div>
-      )}
-
-      {relatedNotes.length === 0 && (
-        <div className="text-center py-8 text-muted-foreground">
-          <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p>No related notes found yet.</p>
-          <p className="text-sm">Keep adding notes to build your knowledge base!</p>
+      ) : (
+        <div className="flex items-center gap-3 px-4 py-4 rounded-lg border border-dashed border-border text-muted-foreground">
+          <Link2 className="w-4 h-4 flex-shrink-0 opacity-50" />
+          <div>
+            <p className="text-sm font-medium">No connections yet</p>
+            <p className="text-xs mt-0.5">
+              Keep adding notes — connections appear automatically as your knowledge base grows.
+            </p>
+          </div>
         </div>
       )}
     </div>
