@@ -26,7 +26,7 @@ export interface TemplateData {
   research?: ResearchData
 }
 
-export type IntentType = 'research' | 'note' | 'unknown'
+export type IntentType = 'publish' | 'note' | 'unknown'
 
 export type LoadingState = 
   | 'idle' 

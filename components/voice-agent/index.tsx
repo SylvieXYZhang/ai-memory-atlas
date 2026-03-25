@@ -107,7 +107,7 @@ export function VoiceAgent() {
         store.addLog(`Note saved! Found ${related.length} related notes`, 'success')
         store.setLoadingState('complete')
       } else {
-        // Research flow
+        // Publish flow
         store.setLoadingState('generating-summary')
         store.addLog('Generating quick summary...', 'info')
         
@@ -152,7 +152,7 @@ export function VoiceAgent() {
 
   const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
   const isDeepResearching = store.loadingState === 'deep-research'
-  const showResearchResult = store.intent === 'research' && store.summary && store.loadingState === 'complete'
+  const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
   const showNoteResult = store.intent === 'note' && store.currentNote && store.loadingState === 'complete'
 
   const templateData: TemplateData = {
@@ -223,12 +223,12 @@ export function VoiceAgent() {
           <div className="flex items-center justify-center gap-4">
             <div className={cn(
               "flex items-center gap-2 px-4 py-2 rounded-full border transition-colors",
-              store.intent === 'research' 
+              store.intent === 'publish' 
                 ? "border-research bg-research/10 text-research" 
                 : "border-border text-muted-foreground"
             )}>
               <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">Research Mode</span>
+              <span className="text-sm font-medium">Publish Mode</span>
             </div>
             <div className={cn(
               "flex items-center gap-2 px-4 py-2 rounded-full border transition-colors",
@@ -260,8 +260,8 @@ export function VoiceAgent() {
             </div>
           )}
 
-          {/* Research results */}
-          {showResearchResult && (
+          {/* Publish results */}
+          {showPublishResult && (
             <div className="space-y-6">
               {/* Quick summary */}
               {!store.researchData && (

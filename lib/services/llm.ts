@@ -30,12 +30,12 @@ export async function detectIntent(text: string, apiKey: string): Promise<Intent
   }
 
   const prompt = `Analyze the following user input and determine if they want to:
-1. "research" - They want to research, analyze, or learn about a topic
-2. "note" - They want to save a note, record a thought, or remember something
+1. "publish" - They want to research, analyze, learn about a topic, or create content for publishing
+2. "note" - They want to save a note, record a thought, or remember something personal
 
 User input: "${text}"
 
-Respond with ONLY one word: either "research" or "note".`
+Respond with ONLY one word: either "publish" or "note".`
 
   try {
     const response = await axios.post<LLMResponse>(LLM_ENDPOINT, {
@@ -55,7 +55,7 @@ Respond with ONLY one word: either "research" or "note".`
     })
 
     const content = response.data?.choices?.[0]?.message?.content?.toLowerCase().trim()
-    if (content?.includes('research')) return 'research'
+    if (content?.includes('publish')) return 'publish'
     if (content?.includes('note')) return 'note'
     return 'unknown'
   } catch {
@@ -70,10 +70,10 @@ Respond with ONLY one word: either "research" or "note".`
 function detectIntentLocal(text: string): IntentType {
   const lower = text.toLowerCase()
   
-  const researchKeywords = [
+  const publishKeywords = [
     'research', 'analyze', 'study', 'investigate', 'look into',
     'what is', 'what are', 'tell me about', 'explain', 'how does',
-    'market', 'trends', 'industry', 'competitors'
+    'market', 'trends', 'industry', 'competitors', 'publish', 'create', 'write'
   ]
   
   const noteKeywords = [
@@ -81,12 +81,12 @@ function detectIntentLocal(text: string): IntentType {
     'thought', 'idea', 'realized', 'reminder', 'note to self'
   ]
   
-  const hasResearch = researchKeywords.some(kw => lower.includes(kw))
+  const hasPublish = publishKeywords.some(kw => lower.includes(kw))
   const hasNote = noteKeywords.some(kw => lower.includes(kw))
   
-  if (hasNote && !hasResearch) return 'note'
-  if (hasResearch) return 'research'
-  return 'research' // Default to research
+  if (hasNote && !hasPublish) return 'note'
+  if (hasPublish) return 'publish'
+  return 'publish' // Default to publish
 }
 
 /**
