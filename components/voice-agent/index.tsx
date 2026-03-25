@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { Settings, Volume2, FileText, Lightbulb, FlaskConical } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { VoiceRecorder } from './voice-recorder'
@@ -29,6 +29,7 @@ export function VoiceAgent() {
   const store = useAppStore()
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const apiKeyRef = useRef<string>('')
+  const [isPublishingNote, setIsPublishingNote] = useState(false)
 
   // Load API key and notes on mount
   useEffect(() => {
@@ -139,6 +140,20 @@ export function VoiceAgent() {
         const summary = await generateSummary(transcript, apiKeyRef.current)
         store.setSummary(summary)
         store.addLog('Summary generated', 'success')
+        
+        // Save publish record
+        const record: PublishRecord = {
+          id: `pub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          transcript,
+          summary,
+          research: null,
+          timestamp: Date.now(),
+          createdAt: new Date().toLocaleString()
+        }
+        store.addPublishRecord(record)
+        const updated = [record, ...store.publishHistory].slice(0, 50)
+        localStorage.setItem(PUBLISH_HISTORY_KEY, JSON.stringify(updated))
+        
         store.setLoadingState('complete')
       }
     } catch (error) {
@@ -181,6 +196,52 @@ export function VoiceAgent() {
     store.addLog(`Loaded ${notes.length} demo notes with semantic overlap`, 'success')
     store.addLog('Try saying something about AI, startups, or note-taking to see connections!', 'info')
   }, [])
+
+  // Save a publish record and persist to localStorage
+  const savePublishRecord = useCallback((record: PublishRecord) => {
+    store.addPublishRecord(record)
+    const updated = [record, ...store.publishHistory].slice(0, 50)
+    localStorage.setItem(PUBLISH_HISTORY_KEY, JSON.stringify(updated))
+  }, [store.publishHistory])
+
+  // Publish a note — runs the publish flow on a note's text
+  const handlePublishNote = useCallback(async (noteId: string) => {
+    const note = store.notes.find(n => n.id === noteId)
+    if (!note) return
+
+    setIsPublishingNote(true)
+    store.addLog(`Publishing note ${noteId.slice(0, 8)}...`, 'info')
+
+    try {
+      // Generate summary for the note
+      const summary = await generateSummary(note.text, apiKeyRef.current)
+      
+      // Create publish record
+      const record: PublishRecord = {
+        id: `pub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        transcript: note.text,
+        summary,
+        research: null,
+        timestamp: Date.now(),
+        createdAt: new Date().toLocaleString(),
+        sourceNoteId: noteId
+      }
+      
+      savePublishRecord(record)
+      store.addLog('Note published as draft!', 'success')
+      
+      // Switch to publish view
+      store.setIntent('publish')
+      store.setTranscript(note.text)
+      store.setSummary(summary)
+      store.setLoadingState('complete')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      store.addLog(`Publish error: ${message}`, 'error')
+    } finally {
+      setIsPublishingNote(false)
+    }
+  }, [store.notes, savePublishRecord])
 
   const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
   const isDeepResearching = store.loadingState === 'deep-research'
@@ -373,6 +434,8 @@ export function VoiceAgent() {
             <NoteDisplay
               currentNote={store.currentNote}
               relatedNotes={store.relatedNotes}
+              onPublish={handlePublishNote}
+              isPublishing={isPublishingNote}
             />
           )}
 
@@ -388,6 +451,14 @@ export function VoiceAgent() {
               </p>
             </div>
           )}
+
+          {/* History panel */}
+          <HistoryPanel
+            notes={store.notes}
+            publishHistory={store.publishHistory}
+            onPublishNote={handlePublishNote}
+            isPublishing={isPublishingNote}
+          />
 
           {/* Debug panel */}
           <DebugPanel

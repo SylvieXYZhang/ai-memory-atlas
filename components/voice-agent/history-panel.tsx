@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, StickyNote, Clock, ChevronDown, ChevronUp, Send, Trash2 } from 'lucide-react'
+import { FileText, StickyNote, Clock, ChevronDown, ChevronUp, Send } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,9 +17,8 @@ import type { NoteRecord, PublishRecord } from '@/lib/types'
 interface HistoryPanelProps {
   notes: NoteRecord[]
   publishHistory: PublishRecord[]
-  onPublishNote: (note: NoteRecord) => void
-  onDeleteNote: (id: string) => void
-  onViewPublish: (record: PublishRecord) => void
+  onPublishNote: (noteId: string) => void
+  isPublishing?: boolean
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -41,9 +40,8 @@ function truncate(text: string, maxLen: number): string {
 export function HistoryPanel({ 
   notes, 
   publishHistory, 
-  onPublishNote, 
-  onDeleteNote,
-  onViewPublish 
+  onPublishNote,
+  isPublishing
 }: HistoryPanelProps) {
   const [notesOpen, setNotesOpen] = useState(true)
   const [publishOpen, setPublishOpen] = useState(true)
@@ -92,25 +90,16 @@ export function HistoryPanel({
                           <Clock className="w-3 h-3" />
                           {formatRelativeTime(note.timestamp)}
                         </span>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 gap-1 text-xs text-research hover:text-research hover:bg-research/10"
-                            onClick={() => onPublishNote(note)}
-                          >
-                            <Send className="w-3 h-3" />
-                            Publish
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => onDeleteNote(note.id)}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 gap-1 text-xs text-research hover:text-research hover:bg-research/10"
+                          onClick={() => onPublishNote(note.id)}
+                          disabled={isPublishing}
+                        >
+                          <Send className="w-3 h-3" />
+                          {isPublishing ? 'Publishing...' : 'Publish'}
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -147,10 +136,9 @@ export function HistoryPanel({
                   <Card 
                     key={record.id} 
                     className={cn(
-                      "border-research/20 bg-research/5 hover:bg-research/10 transition-colors cursor-pointer",
+                      "border-research/20 bg-research/5 transition-colors",
                       record.sourceNoteId && "border-l-2 border-l-note"
                     )}
-                    onClick={() => onViewPublish(record)}
                   >
                     <CardContent className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
