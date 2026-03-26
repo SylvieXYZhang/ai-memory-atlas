@@ -426,6 +426,8 @@ export function VoiceAgent() {
               isProcessing={isProcessing}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
+              onError={(error) => store.addLog(error, 'error')}
+              maxDuration={180}
             />
           </div>
 
