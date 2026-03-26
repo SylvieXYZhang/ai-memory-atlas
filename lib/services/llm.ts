@@ -107,20 +107,25 @@ export async function detectIntent(
     return detectIntentLocal(text)
   }
 
-  const prompt = `Analyze the following user input and determine if they want to:
+  const prompt = `Analyze the following user input and determine their intent:
+分析以下用户输入并判断其意图：
+
 1. "publish" - They want to research, analyze, learn about a topic, or create content for publishing
+   用户想要研究、分析、了解某个话题，或创建用于发布的内容
 2. "note" - They want to save a note, record a thought, or remember something personal
+   用户想要保存笔记、记录想法或记住个人事项
 
-User input: "${text}"
+User input / 用户输入: "${text}"
 
-Respond with ONLY one word: either "publish" or "note".`
+Respond with ONLY one word: either "publish" or "note".
+只回复一个词："publish" 或 "note"。`
 
   try {
     const content = await callLLM(
       provider, 
       apiKey, 
       model,
-      'You are an intent classifier. Respond with only one word.',
+      'You are an intent classifier. Respond with only one word: "publish" or "note". 你是一个意图分类器，只回复一个词："publish" 或 "note"。',
       prompt,
       { temperature: 0.1, maxTokens: 10 }
     )
@@ -136,24 +141,42 @@ Respond with ONLY one word: either "publish" or "note".`
 }
 
 /**
- * Local intent detection using keywords
+ * Local intent detection using keywords (bilingual: English + Chinese)
  */
 function detectIntentLocal(text: string): IntentType {
   const lower = text.toLowerCase()
   
-  const publishKeywords = [
+  // English keywords
+  const publishKeywordsEN = [
     'research', 'analyze', 'study', 'investigate', 'look into',
     'what is', 'what are', 'tell me about', 'explain', 'how does',
     'market', 'trends', 'industry', 'competitors', 'publish', 'create', 'write'
   ]
   
-  const noteKeywords = [
+  const noteKeywordsEN = [
     'note', 'record', 'save', 'remember', 'write down',
     'thought', 'idea', 'realized', 'reminder', 'note to self'
   ]
+
+  // Chinese keywords
+  const publishKeywordsCN = [
+    '研究', '分析', '调研', '调查', '了解', '查一下', '查查',
+    '什么是', '是什么', '怎么', '如何', '告诉我', '解释',
+    '市场', '趋势', '行业', '竞争', '发布', '创建', '写', '撰写'
+  ]
   
-  const hasPublish = publishKeywords.some(kw => lower.includes(kw))
-  const hasNote = noteKeywords.some(kw => lower.includes(kw))
+  const noteKeywordsCN = [
+    '笔记', '记录', '保存', '记住', '写下', '备忘',
+    '想法', '灵感', '突然想到', '提醒', '记一下', '记下来', '备注'
+  ]
+  
+  const hasPublishEN = publishKeywordsEN.some(kw => lower.includes(kw))
+  const hasNoteEN = noteKeywordsEN.some(kw => lower.includes(kw))
+  const hasPublishCN = publishKeywordsCN.some(kw => text.includes(kw))
+  const hasNoteCN = noteKeywordsCN.some(kw => text.includes(kw))
+  
+  const hasPublish = hasPublishEN || hasPublishCN
+  const hasNote = hasNoteEN || hasNoteCN
   
   if (hasNote && !hasPublish) return 'note'
   if (hasPublish) return 'publish'
@@ -162,6 +185,7 @@ function detectIntentLocal(text: string): IntentType {
 
 /**
  * Generate a quick summary (200 words)
+ * Responds in the same language as the input
  */
 export async function generateSummary(
   topic: string, 
@@ -176,22 +200,26 @@ export async function generateSummary(
   const cleanTopic = extractTopic(topic)
   
   const prompt = `Generate a concise 200-word summary about: "${cleanTopic}"
-  
-Include:
-- Brief overview of the topic
-- Key points or current state
-- Why it matters
+针对以下主题生成约200字的简洁摘要："${cleanTopic}"
 
-Write in a clear, informative tone suitable for a professional audience.`
+Include / 包含:
+- Brief overview of the topic / 话题概述
+- Key points or current state / 关键要点或现状
+- Why it matters / 重要性
+
+IMPORTANT: Detect the language of the topic and respond in the SAME language.
+重要：检测主题的语言，并用相同的语言回复。
+- If the topic is in English, respond entirely in English.
+- 如果主题是中文，请完全用中文回复。`
 
   try {
     const content = await callLLM(
       provider,
       apiKey,
       model,
-      'You are a knowledgeable research assistant.',
+      'You are a knowledgeable research assistant. Detect the input language and respond in the same language. 你是一位知识渊博的研究助手。检测输入语言并用相同语言回复。',
       prompt,
-      { temperature: 0.7, maxTokens: 500 }
+      { temperature: 0.7, maxTokens: 800 }
     )
     return content || generateMockSummary(topic)
   } catch {
@@ -201,6 +229,7 @@ Write in a clear, informative tone suitable for a professional audience.`
 
 /**
  * Perform deep research with web search
+ * Responds in the same language as the input
  */
 export async function performDeepResearch(
   topic: string, 
@@ -214,25 +243,31 @@ export async function performDeepResearch(
 
   const cleanTopic = extractTopic(topic)
   
-  const prompt = `Conduct comprehensive research on: "${cleanTopic}"
+  const prompt = `Conduct comprehensive research on / 针对以下主题进行全面研究: "${cleanTopic}"
 
-Provide your findings in the following JSON format:
+Provide your findings in the following JSON format / 以下列JSON格式提供你的研究结果:
 {
-  "marketOverview": "Detailed overview of the current market/field (2-3 paragraphs)",
-  "keyPlayers": ["List of 5-7 key companies, organizations, or figures"],
-  "trends": ["List of 5-7 current trends or developments"],
-  "conclusion": "Strategic insights and future outlook (1-2 paragraphs)",
-  "sources": ["List of relevant sources or references"]
+  "marketOverview": "Detailed overview of the current market/field (2-3 paragraphs) / 当前市场/领域的详细概述（2-3段）",
+  "keyPlayers": ["List of 5-7 key companies, organizations, or figures / 5-7个关键公司、组织或人物列表"],
+  "trends": ["List of 5-7 current trends or developments / 5-7个当前趋势或发展列表"],
+  "conclusion": "Strategic insights and future outlook (1-2 paragraphs) / 战略见解和未来展望（1-2段）",
+  "sources": ["List of relevant sources or references / 相关来源或参考文献列表"]
 }
 
-Be thorough, accurate, and provide actionable insights.`
+IMPORTANT / 重要:
+- Detect the language of the topic and write ALL content in the SAME language.
+- 检测主题的语言，并用相同的语言撰写所有内容。
+- If the topic is in English, all values in the JSON should be in English.
+- 如果主题是中文，JSON中的所有值都应该是中文。
+- Be thorough, accurate, and provide actionable insights.
+- 要全面、准确，并提供可操作的见解。`
 
   try {
     const content = await callLLM(
       provider,
       apiKey,
       model,
-      'You are an expert research analyst. Always respond with valid JSON.',
+      'You are an expert research analyst. Always respond with valid JSON. Detect input language and respond in the same language. 你是专业的研究分析师，始终返回有效的JSON。检测输入语言并用相同语言回复。',
       prompt,
       { temperature: 0.7, maxTokens: 4000, enableSearch: true }
     )

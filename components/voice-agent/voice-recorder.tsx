@@ -78,7 +78,10 @@ export function VoiceRecorder({
     
     recognition.continuous = true
     recognition.interimResults = true
-    recognition.lang = 'en-US' // Default to English, could be made configurable
+    // Use multi-language recognition - browser will auto-detect
+    // Note: Most browsers support auto language detection when lang is not set strictly
+    // We set to empty or use a broad locale to enable bilingual recognition
+    recognition.lang = '' // Empty allows browser to detect language automatically
     
     interimTranscriptRef.current = ''
     finalTranscriptRef.current = ''

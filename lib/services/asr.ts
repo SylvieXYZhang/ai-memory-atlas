@@ -4,8 +4,13 @@
 import { blobToBase64 } from '../voice-utils'
 import { type Provider, getProviderInfo } from '../api-config'
 
-// Hot words for better recognition of tech terms
-const HOT_WORDS = ['AI', 'LLM', 'RAG', 'VoiceAgent', 'Transformer', 'GPT', 'API', 'SDK', 'SaaS', 'B2B', 'B2C']
+// Hot words for better recognition of tech terms (bilingual)
+const HOT_WORDS = [
+  // English
+  'AI', 'LLM', 'RAG', 'VoiceAgent', 'Transformer', 'GPT', 'API', 'SDK', 'SaaS', 'B2B', 'B2C',
+  // Chinese
+  '人工智能', '大模型', '深度学习', '机器学习', '自然语言处理', '语音识别', '知识库', '向量数据库'
+]
 
 interface DashScopeASRResponse {
   choices: Array<{
