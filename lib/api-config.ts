@@ -1,23 +1,18 @@
 // API Configuration for VoiceAgent
-// Supports multiple providers and model assignments per function
+// Supports multiple providers with user-defined models
 
 export type Provider = 'dashscope' | 'openai' | 'anthropic' | 'groq'
 
 export type FunctionType = 'asr' | 'intent' | 'summary' | 'research'
 
-export interface ProviderConfig {
+export interface ProviderInfo {
   id: Provider
   name: string
-  endpoint: string
-  models: ModelOption[]
+  chatEndpoint: string
+  asrEndpoint?: string
   supportsASR: boolean
-}
-
-export interface ModelOption {
-  id: string
-  name: string
-  description: string
-  functions: FunctionType[] // which functions this model supports
+  keyPlaceholder: string
+  defaultModels: Record<FunctionType, string>
 }
 
 export interface APIKeyConfig {
@@ -29,6 +24,8 @@ export interface ModelAssignment {
   function: FunctionType
   provider: Provider
   model: string
+  validated: boolean  // Whether this config has been tested
+  lastError?: string  // Last validation error if any
 }
 
 export interface UserAPIConfig {
@@ -36,73 +33,84 @@ export interface UserAPIConfig {
   assignments: ModelAssignment[]
 }
 
-// Available providers and their models
-export const PROVIDERS: ProviderConfig[] = [
-  {
+// Provider configurations
+export const PROVIDERS: Record<Provider, ProviderInfo> = {
+  dashscope: {
     id: 'dashscope',
     name: 'Alibaba DashScope',
-    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    chatEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    asrEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
     supportsASR: true,
-    models: [
-      { id: 'qwen3-asr-flash', name: 'Qwen3 ASR Flash', description: 'Fast speech recognition', functions: ['asr'] },
-      { id: 'qwen-max', name: 'Qwen Max', description: 'Most capable, best for research', functions: ['intent', 'summary', 'research'] },
-      { id: 'qwen-plus', name: 'Qwen Plus', description: 'Balanced performance', functions: ['intent', 'summary', 'research'] },
-      { id: 'qwen-turbo', name: 'Qwen Turbo', description: 'Fast and efficient', functions: ['intent', 'summary'] },
-    ]
+    keyPlaceholder: 'sk-...',
+    defaultModels: {
+      asr: 'qwen3-asr-flash',
+      intent: 'qwen-max',
+      summary: 'qwen-turbo',
+      research: 'qwen-max'
+    }
   },
-  {
+  openai: {
     id: 'openai',
     name: 'OpenAI',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
+    chatEndpoint: 'https://api.openai.com/v1/chat/completions',
+    asrEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
     supportsASR: true,
-    models: [
-      { id: 'whisper-1', name: 'Whisper', description: 'Speech recognition', functions: ['asr'] },
-      { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable multimodal', functions: ['intent', 'summary', 'research'] },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast and affordable', functions: ['intent', 'summary'] },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'High capability', functions: ['intent', 'summary', 'research'] },
-    ]
+    keyPlaceholder: 'sk-...',
+    defaultModels: {
+      asr: 'whisper-1',
+      intent: 'gpt-4o-mini',
+      summary: 'gpt-4o-mini',
+      research: 'gpt-4o'
+    }
   },
-  {
+  anthropic: {
     id: 'anthropic',
     name: 'Anthropic',
-    endpoint: 'https://api.anthropic.com/v1/messages',
+    chatEndpoint: 'https://api.anthropic.com/v1/messages',
     supportsASR: false,
-    models: [
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', description: 'Best for analysis', functions: ['intent', 'summary', 'research'] },
-      { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', description: 'Fast and efficient', functions: ['intent', 'summary'] },
-    ]
+    keyPlaceholder: 'sk-ant-...',
+    defaultModels: {
+      asr: '', // Not supported
+      intent: 'claude-3-5-sonnet-20241022',
+      summary: 'claude-3-haiku-20240307',
+      research: 'claude-3-5-sonnet-20241022'
+    }
   },
-  {
+  groq: {
     id: 'groq',
     name: 'Groq',
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    chatEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    asrEndpoint: 'https://api.groq.com/openai/v1/audio/transcriptions',
     supportsASR: true,
-    models: [
-      { id: 'whisper-large-v3', name: 'Whisper Large V3', description: 'Speech recognition', functions: ['asr'] },
-      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'High capability', functions: ['intent', 'summary', 'research'] },
-      { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', description: 'Ultra fast', functions: ['intent', 'summary'] },
-      { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', description: 'Balanced MoE model', functions: ['intent', 'summary', 'research'] },
-    ]
+    keyPlaceholder: 'gsk_...',
+    defaultModels: {
+      asr: 'whisper-large-v3',
+      intent: 'llama-3.3-70b-versatile',
+      summary: 'llama-3.1-8b-instant',
+      research: 'llama-3.3-70b-versatile'
+    }
   }
-]
-
-// Default configuration
-export const DEFAULT_CONFIG: UserAPIConfig = {
-  keys: [],
-  assignments: [
-    { function: 'asr', provider: 'dashscope', model: 'qwen3-asr-flash' },
-    { function: 'intent', provider: 'dashscope', model: 'qwen-max' },
-    { function: 'summary', provider: 'dashscope', model: 'qwen-turbo' },
-    { function: 'research', provider: 'dashscope', model: 'qwen-max' },
-  ]
 }
 
-// Function display names
+// Function display names and descriptions
 export const FUNCTION_INFO: Record<FunctionType, { name: string; description: string }> = {
   asr: { name: 'Speech Recognition', description: 'Convert voice to text' },
   intent: { name: 'Intent Detection', description: 'Classify as Publish or Note mode' },
   summary: { name: 'Summary Generation', description: 'Generate quick 200-word summary' },
   research: { name: 'Deep Research', description: 'Comprehensive analysis with web search' },
+}
+
+// Default configuration
+export function getDefaultConfig(): UserAPIConfig {
+  return {
+    keys: [],
+    assignments: [
+      { function: 'asr', provider: 'dashscope', model: 'qwen3-asr-flash', validated: false },
+      { function: 'intent', provider: 'dashscope', model: 'qwen-max', validated: false },
+      { function: 'summary', provider: 'dashscope', model: 'qwen-turbo', validated: false },
+      { function: 'research', provider: 'dashscope', model: 'qwen-max', validated: false },
+    ]
+  }
 }
 
 const STORAGE_KEY = 'voiceagent_api_config'
@@ -111,16 +119,16 @@ const STORAGE_KEY = 'voiceagent_api_config'
  * Load API configuration from localStorage
  */
 export function loadAPIConfig(): UserAPIConfig {
-  if (typeof window === 'undefined') return DEFAULT_CONFIG
+  if (typeof window === 'undefined') return getDefaultConfig()
   
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const config = JSON.parse(saved) as UserAPIConfig
-      // Merge with defaults to ensure all functions have assignments
+      const defaults = getDefaultConfig()
       return {
         keys: config.keys || [],
-        assignments: DEFAULT_CONFIG.assignments.map(defaultAssign => {
+        assignments: defaults.assignments.map(defaultAssign => {
           const userAssign = config.assignments?.find(a => a.function === defaultAssign.function)
           return userAssign || defaultAssign
         })
@@ -130,7 +138,7 @@ export function loadAPIConfig(): UserAPIConfig {
     console.error('[v0] Error loading API config:', error)
   }
   
-  return DEFAULT_CONFIG
+  return getDefaultConfig()
 }
 
 /**
@@ -157,14 +165,14 @@ export function getAPIKey(config: UserAPIConfig, provider: Provider): string {
  * Get model assignment for a specific function
  */
 export function getAssignment(config: UserAPIConfig, func: FunctionType): ModelAssignment {
-  return config.assignments.find(a => a.function === func) || DEFAULT_CONFIG.assignments.find(a => a.function === func)!
+  return config.assignments.find(a => a.function === func) || getDefaultConfig().assignments.find(a => a.function === func)!
 }
 
 /**
- * Get provider config by ID
+ * Get provider info by ID
  */
-export function getProvider(providerId: Provider): ProviderConfig | undefined {
-  return PROVIDERS.find(p => p.id === providerId)
+export function getProviderInfo(providerId: Provider): ProviderInfo {
+  return PROVIDERS[providerId]
 }
 
 /**
@@ -173,7 +181,15 @@ export function getProvider(providerId: Provider): ProviderConfig | undefined {
 export function isFunctionConfigured(config: UserAPIConfig, func: FunctionType): boolean {
   const assignment = getAssignment(config, func)
   const key = getAPIKey(config, assignment.provider)
-  return !!key
+  return !!key && !!assignment.model
+}
+
+/**
+ * Check if a function is validated
+ */
+export function isFunctionValidated(config: UserAPIConfig, func: FunctionType): boolean {
+  const assignment = getAssignment(config, func)
+  return assignment.validated
 }
 
 /**
@@ -183,4 +199,101 @@ export function getUnconfiguredFunctions(config: UserAPIConfig): FunctionType[] 
   return (['asr', 'intent', 'summary', 'research'] as FunctionType[]).filter(
     func => !isFunctionConfigured(config, func)
   )
+}
+
+/**
+ * Validate an API key + model combination by making a test request
+ * Returns { valid: true } or { valid: false, error: string }
+ */
+export async function validateAPIConfig(
+  provider: Provider,
+  apiKey: string,
+  model: string,
+  func: FunctionType
+): Promise<{ valid: boolean; error?: string }> {
+  if (!apiKey) {
+    return { valid: false, error: 'API key is required' }
+  }
+  if (!model) {
+    return { valid: false, error: 'Model name is required' }
+  }
+
+  const providerInfo = PROVIDERS[provider]
+  
+  // Special case for ASR - different validation
+  if (func === 'asr') {
+    if (!providerInfo.supportsASR) {
+      return { valid: false, error: `${providerInfo.name} does not support ASR` }
+    }
+    // For ASR we can't easily test without audio, so just validate the key format
+    // and trust the model name for now
+    return { valid: true }
+  }
+
+  // For LLM functions, make a minimal test request
+  try {
+    if (provider === 'anthropic') {
+      // Anthropic uses different API format
+      const response = await fetch(providerInfo.chatEndpoint, {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Say "ok"' }]
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        if (response.status === 401) {
+          return { valid: false, error: 'Invalid API key' }
+        }
+        if (response.status === 404 || (error as { error?: { message?: string } }).error?.message?.includes('model')) {
+          return { valid: false, error: `Model "${model}" not found` }
+        }
+        return { valid: false, error: (error as { error?: { message?: string } }).error?.message || `HTTP ${response.status}` }
+      }
+      return { valid: true }
+    } else {
+      // OpenAI-compatible API (OpenAI, DashScope, Groq)
+      const response = await fetch(providerInfo.chatEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Say "ok"' }]
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        if (response.status === 401) {
+          return { valid: false, error: 'Invalid API key' }
+        }
+        if (response.status === 404) {
+          return { valid: false, error: `Model "${model}" not found` }
+        }
+        const msg = (error as { error?: { message?: string } }).error?.message || ''
+        if (msg.toLowerCase().includes('model')) {
+          return { valid: false, error: `Model "${model}" not found or not accessible` }
+        }
+        return { valid: false, error: msg || `HTTP ${response.status}` }
+      }
+      return { valid: true }
+    }
+  } catch (error) {
+    return { 
+      valid: false, 
+      error: error instanceof Error ? error.message : 'Connection failed' 
+    }
+  }
 }

@@ -101,8 +101,9 @@ export function VoiceAgent() {
       // Transcribe audio
       let transcript: string
       const asrKey = getKeyForFunction('asr')
-      if (asrKey) {
-        transcript = await transcribeAudio(audioBlob, asrKey)
+      const asrAssignment = apiConfig ? getAssignment(apiConfig, 'asr') : null
+      if (asrKey && asrAssignment) {
+        transcript = await transcribeAudio(audioBlob, asrKey, asrAssignment.provider, asrAssignment.model)
       } else {
         store.addLog('No ASR API key - using demo mode', 'warning')
         transcript = await mockTranscribeAudio(store.recordingTime * 1000)
@@ -124,7 +125,13 @@ export function VoiceAgent() {
         store.setLoadingState('analyzing')
         store.addLog('Detecting intent automatically...', 'info')
         const intentKey = getKeyForFunction('intent')
-        const detected = await detectIntent(transcript, intentKey)
+        const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
+        const detected = await detectIntent(
+          transcript, 
+          intentKey,
+          intentAssignment?.provider,
+          intentAssignment?.model
+        )
         intent = detected === 'note' ? 'note' : 'publish'
         store.addLog(`Intent detected: ${intent}`, 'success')
       }
@@ -155,7 +162,13 @@ export function VoiceAgent() {
         store.addLog('Generating quick summary...', 'info')
         
         const summaryKey = getKeyForFunction('summary')
-        const summary = await generateSummary(transcript, summaryKey)
+        const summaryAssignment = apiConfig ? getAssignment(apiConfig, 'summary') : null
+        const summary = await generateSummary(
+          transcript, 
+          summaryKey,
+          summaryAssignment?.provider,
+          summaryAssignment?.model
+        )
         store.setSummary(summary)
         store.addLog('Summary generated', 'success')
         
@@ -190,7 +203,13 @@ export function VoiceAgent() {
 
     try {
       const researchKey = getKeyForFunction('research')
-      const research = await performDeepResearch(store.transcript, researchKey)
+      const researchAssignment = apiConfig ? getAssignment(apiConfig, 'research') : null
+      const research = await performDeepResearch(
+        store.transcript, 
+        researchKey,
+        researchAssignment?.provider,
+        researchAssignment?.model
+      )
       store.setResearchData(research)
       store.addLog('Deep research complete!', 'success')
       store.setLoadingState('complete')
@@ -236,7 +255,13 @@ export function VoiceAgent() {
     try {
       // Generate summary for the note
       const summaryKey = getKeyForFunction('summary')
-      const summary = await generateSummary(note.text, summaryKey)
+      const summaryAssignment = apiConfig ? getAssignment(apiConfig, 'summary') : null
+      const summary = await generateSummary(
+        note.text, 
+        summaryKey,
+        summaryAssignment?.provider,
+        summaryAssignment?.model
+      )
       
       // Create publish record
       const record: PublishRecord = {

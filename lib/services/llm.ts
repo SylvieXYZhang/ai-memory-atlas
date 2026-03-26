@@ -1,18 +1,11 @@
 // LLM Service for intent recognition, summary generation, and deep research
-// Uses Alibaba Cloud Bailian (DashScope) models
+// Supports multiple providers: DashScope, OpenAI, Anthropic, Groq
 
-import axios from 'axios'
 import type { IntentType, ResearchData } from '../types'
 import { extractTopic } from '../voice-utils'
+import { type Provider, getProviderInfo } from '../api-config'
 
-const LLM_ENDPOINT = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
-
-// Model selection
-const INTENT_MODEL = 'qwen-max'
-const SUMMARY_MODEL = 'qwen-turbo'
-const RESEARCH_MODEL = 'qwen-max'
-
-interface LLMResponse {
+interface OpenAILLMResponse {
   choices: Array<{
     message: {
       content: string
@@ -20,10 +13,95 @@ interface LLMResponse {
   }>
 }
 
+interface AnthropicLLMResponse {
+  content: Array<{
+    text: string
+  }>
+}
+
+/**
+ * Call LLM with the configured provider and model
+ */
+async function callLLM(
+  provider: Provider,
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options: { temperature?: number; maxTokens?: number; enableSearch?: boolean } = {}
+): Promise<string> {
+  const providerInfo = getProviderInfo(provider)
+  const { temperature = 0.7, maxTokens = 2000, enableSearch = false } = options
+
+  if (provider === 'anthropic') {
+    // Anthropic uses a different API format
+    const response = await fetch(providerInfo.chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error((error as { error?: { message?: string } }).error?.message || `HTTP ${response.status}`)
+    }
+
+    const data = await response.json() as AnthropicLLMResponse
+    return data.content?.[0]?.text || ''
+  } else {
+    // OpenAI-compatible API (OpenAI, DashScope, Groq)
+    const body: Record<string, unknown> = {
+      model,
+      temperature,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ]
+    }
+
+    // DashScope supports web search
+    if (provider === 'dashscope' && enableSearch) {
+      body.extra_body = { enable_search: true }
+    }
+
+    const response = await fetch(providerInfo.chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error((error as { error?: { message?: string } }).error?.message || `HTTP ${response.status}`)
+    }
+
+    const data = await response.json() as OpenAILLMResponse
+    return data.choices?.[0]?.message?.content || ''
+  }
+}
+
 /**
  * Detect intent from user input (research or note)
  */
-export async function detectIntent(text: string, apiKey: string): Promise<IntentType> {
+export async function detectIntent(
+  text: string, 
+  apiKey: string,
+  provider: Provider = 'dashscope',
+  model: string = 'qwen-max'
+): Promise<IntentType> {
   if (!apiKey) {
     // Fallback to simple keyword detection
     return detectIntentLocal(text)
@@ -38,25 +116,18 @@ User input: "${text}"
 Respond with ONLY one word: either "publish" or "note".`
 
   try {
-    const response = await axios.post<LLMResponse>(LLM_ENDPOINT, {
-      model: INTENT_MODEL,
-      messages: [
-        { role: 'system', content: 'You are an intent classifier. Respond with only one word.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.1,
-      max_tokens: 10
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 15000
-    })
+    const content = await callLLM(
+      provider, 
+      apiKey, 
+      model,
+      'You are an intent classifier. Respond with only one word.',
+      prompt,
+      { temperature: 0.1, maxTokens: 10 }
+    )
 
-    const content = response.data?.choices?.[0]?.message?.content?.toLowerCase().trim()
-    if (content?.includes('publish')) return 'publish'
-    if (content?.includes('note')) return 'note'
+    const result = content.toLowerCase().trim()
+    if (result.includes('publish')) return 'publish'
+    if (result.includes('note')) return 'note'
     return 'unknown'
   } catch {
     // Fallback to local detection on error
@@ -92,7 +163,12 @@ function detectIntentLocal(text: string): IntentType {
 /**
  * Generate a quick summary (200 words)
  */
-export async function generateSummary(topic: string, apiKey: string): Promise<string> {
+export async function generateSummary(
+  topic: string, 
+  apiKey: string,
+  provider: Provider = 'dashscope',
+  model: string = 'qwen-turbo'
+): Promise<string> {
   if (!apiKey) {
     return generateMockSummary(topic)
   }
@@ -109,23 +185,15 @@ Include:
 Write in a clear, informative tone suitable for a professional audience.`
 
   try {
-    const response = await axios.post<LLMResponse>(LLM_ENDPOINT, {
-      model: SUMMARY_MODEL,
-      messages: [
-        { role: 'system', content: 'You are a knowledgeable research assistant.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    })
-
-    return response.data?.choices?.[0]?.message?.content?.trim() || generateMockSummary(topic)
+    const content = await callLLM(
+      provider,
+      apiKey,
+      model,
+      'You are a knowledgeable research assistant.',
+      prompt,
+      { temperature: 0.7, maxTokens: 500 }
+    )
+    return content || generateMockSummary(topic)
   } catch {
     return generateMockSummary(topic)
   }
@@ -134,7 +202,12 @@ Write in a clear, informative tone suitable for a professional audience.`
 /**
  * Perform deep research with web search
  */
-export async function performDeepResearch(topic: string, apiKey: string): Promise<ResearchData> {
+export async function performDeepResearch(
+  topic: string, 
+  apiKey: string,
+  provider: Provider = 'dashscope',
+  model: string = 'qwen-max'
+): Promise<ResearchData> {
   if (!apiKey) {
     return generateMockResearch(topic)
   }
@@ -155,27 +228,15 @@ Provide your findings in the following JSON format:
 Be thorough, accurate, and provide actionable insights.`
 
   try {
-    const response = await axios.post<LLMResponse>(LLM_ENDPOINT, {
-      model: RESEARCH_MODEL,
-      messages: [
-        { role: 'system', content: 'You are an expert research analyst. Always respond with valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-      // Enable web search for deep research
-      extra_body: {
-        enable_search: true
-      }
-    }, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 90000 // 90 second timeout for deep research
-    })
+    const content = await callLLM(
+      provider,
+      apiKey,
+      model,
+      'You are an expert research analyst. Always respond with valid JSON.',
+      prompt,
+      { temperature: 0.7, maxTokens: 4000, enableSearch: true }
+    )
 
-    const content = response.data?.choices?.[0]?.message?.content
     if (!content) {
       return generateMockResearch(topic)
     }
