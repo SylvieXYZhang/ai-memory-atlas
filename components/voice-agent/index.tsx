@@ -31,12 +31,17 @@ import {
 
 const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
 
+const BUFFER_TIME_MS = 2000 // 2 seconds buffer before processing
+
 export function VoiceAgent() {
   const store = useAppStore()
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const bufferTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const pendingAudioRef = useRef<Blob | null>(null)
   const [apiConfig, setApiConfig] = useState<UserAPIConfig | null>(null)
   const [isPublishingNote, setIsPublishingNote] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [bufferCountdown, setBufferCountdown] = useState<number | null>(null)
 
   // Load API config and notes on mount
   useEffect(() => {
@@ -84,7 +89,27 @@ export function VoiceAgent() {
     return getAPIKey(apiConfig, assignment.provider)
   }, [apiConfig])
 
+  // Cancel any pending buffer timer
+  const cancelBuffer = useCallback(() => {
+    if (bufferTimerRef.current) {
+      clearTimeout(bufferTimerRef.current)
+      bufferTimerRef.current = null
+    }
+    setBufferCountdown(null)
+    pendingAudioRef.current = null
+  }, [])
+
   const handleStartRecording = useCallback(() => {
+    // Cancel any pending buffer - user wants to continue/modify input
+    if (bufferTimerRef.current) {
+      cancelBuffer()
+      store.addLog('Buffer cancelled - continuing input', 'info')
+      // Don't reset, keep existing realtime transcript to append to
+      store.setIsRecording(true)
+      store.setLoadingState('recording')
+      return
+    }
+    
     // If there's an existing transcript, push it to history before resetting
     if (store.transcript && store.transcript.trim()) {
       store.addTranscriptToHistory({
@@ -99,12 +124,11 @@ export function VoiceAgent() {
     store.setIsRecording(true)
     store.setLoadingState('recording')
     store.addLog('Recording started', 'info')
-  }, [store.transcript, store.intent])
+  }, [store.transcript, store.intent, cancelBuffer])
 
-  const handleStopRecording = useCallback(async (audioBlob: Blob) => {
-    store.setIsRecording(false)
+  // Process the audio after buffer expires
+  const processAudio = useCallback(async (audioBlob: Blob) => {
     store.setLoadingState('transcribing')
-    store.addLog(`Recording stopped (${store.recordingTime}s)`, 'info')
     store.addLog('Starting transcription...', 'info')
 
     try {
@@ -202,7 +226,44 @@ export function VoiceAgent() {
       store.addLog(`Error: ${message}`, 'error')
       store.setLoadingState('error')
     }
-  }, [store.recordingTime])
+  }, [store.recordingTime, apiConfig, getKeyForFunction])
+
+  const handleStopRecording = useCallback((audioBlob: Blob) => {
+    store.setIsRecording(false)
+    store.addLog(`Recording stopped (${store.recordingTime}s)`, 'info')
+    
+    // Store the audio blob for processing
+    pendingAudioRef.current = audioBlob
+    
+    // Start buffer countdown
+    store.setLoadingState('idle')
+    store.addLog('Buffer started - click mic again within 2s to continue recording', 'info')
+    setBufferCountdown(2)
+    
+    // Countdown interval
+    const countdownInterval = setInterval(() => {
+      setBufferCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+    
+    // Set buffer timer to process after 2 seconds
+    bufferTimerRef.current = setTimeout(() => {
+      clearInterval(countdownInterval)
+      setBufferCountdown(null)
+      
+      if (pendingAudioRef.current) {
+        store.addLog('Buffer expired - processing audio', 'info')
+        processAudio(pendingAudioRef.current)
+        pendingAudioRef.current = null
+      }
+      bufferTimerRef.current = null
+    }, BUFFER_TIME_MS)
+  }, [store.recordingTime, processAudio])
 
   const handleDeepResearch = useCallback(async () => {
     if (!store.transcript) return
@@ -301,6 +362,7 @@ export function VoiceAgent() {
   }, [store.notes, savePublishRecord])
 
   const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
+  const isInBuffer = bufferCountdown !== null
   const isDeepResearching = store.loadingState === 'deep-research'
   const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
   const showNoteResult = store.intent === 'note' && store.currentNote && store.loadingState === 'complete'
@@ -433,7 +495,7 @@ export function VoiceAgent() {
             <VoiceRecorder
               isRecording={store.isRecording}
               recordingTime={store.recordingTime}
-              isProcessing={isProcessing}
+              isProcessing={isProcessing && !isInBuffer}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
               onError={(error) => store.addLog(error, 'error')}
@@ -441,6 +503,23 @@ export function VoiceAgent() {
               maxDuration={180}
             />
           </div>
+
+          {/* Buffer countdown indicator */}
+          {bufferCountdown !== null && (
+            <div className="p-4 rounded-lg bg-note/10 border border-note/30 transition-all animate-pulse">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-note animate-ping" />
+                  <p className="text-sm font-medium text-note">
+                    Processing in {bufferCountdown}s...
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Click mic to continue recording
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Real-time transcript display */}
           {(store.isRecording || store.realtimeTranscript) && !store.transcript && (
