@@ -14,7 +14,14 @@ interface VoiceRecorderProps {
   onStartRecording: () => void
   onStopRecording: (audioBlob: Blob) => void
   onError?: (error: string) => void
+  onRealtimeTranscript?: (transcript: string) => void
   maxDuration?: number
+}
+
+// Check if Web Speech API is available
+const isSpeechRecognitionSupported = () => {
+  return typeof window !== 'undefined' && 
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 }
 
 export function VoiceRecorder({
@@ -24,13 +31,17 @@ export function VoiceRecorder({
   onStartRecording,
   onStopRecording,
   onError,
+  onRealtimeTranscript,
   maxDuration = 180 // Default to 3 minutes
 }: VoiceRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null)
   const [permissionState, setPermissionState] = useState<PermissionState>('unknown')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const interimTranscriptRef = useRef<string>('')
+  const finalTranscriptRef = useRef<string>('')
 
   // Check microphone permission on mount
   useEffect(() => {
@@ -58,6 +69,74 @@ export function VoiceRecorder({
     }
   }
 
+  // Start Web Speech API for real-time transcription
+  const startSpeechRecognition = useCallback(() => {
+    if (!isSpeechRecognitionSupported()) return
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SpeechRecognition()
+    
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US' // Default to English, could be made configurable
+    
+    interimTranscriptRef.current = ''
+    finalTranscriptRef.current = ''
+    
+    recognition.onresult = (event) => {
+      let interim = ''
+      let final = ''
+      
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          final += result[0].transcript + ' '
+        } else {
+          interim += result[0].transcript
+        }
+      }
+      
+      finalTranscriptRef.current = final
+      interimTranscriptRef.current = interim
+      
+      // Emit combined transcript
+      const combined = (final + interim).trim()
+      onRealtimeTranscript?.(combined)
+    }
+    
+    recognition.onerror = (event) => {
+      // Don't treat 'no-speech' or 'aborted' as errors
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        console.error('[v0] Speech recognition error:', event.error)
+      }
+    }
+    
+    recognition.onend = () => {
+      // Restart if still recording (speech recognition can stop on silence)
+      if (mediaRecorderRef.current?.state === 'recording' && speechRecognitionRef.current) {
+        try {
+          recognition.start()
+        } catch {
+          // Ignore errors when restarting
+        }
+      }
+    }
+    
+    try {
+      recognition.start()
+      speechRecognitionRef.current = recognition
+    } catch (error) {
+      console.error('[v0] Failed to start speech recognition:', error)
+    }
+  }, [onRealtimeTranscript])
+
+  const stopSpeechRecognition = useCallback(() => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop()
+      speechRecognitionRef.current = null
+    }
+  }, [])
+
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop()
@@ -66,7 +145,8 @@ export function VoiceRecorder({
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
     }
-  }, [])
+    stopSpeechRecognition()
+  }, [stopSpeechRecognition])
 
   const startRecording = useCallback(async () => {
     setErrorMessage(null)
@@ -127,6 +207,9 @@ export function VoiceRecorder({
       // Start recording with timeslice to get data periodically
       mediaRecorder.start(1000)
       onStartRecording()
+      
+      // Start real-time speech recognition
+      startSpeechRecognition()
     } catch (error) {
       let errorMsg = 'Could not access microphone.'
       

@@ -59,6 +59,13 @@ export interface LogEntry {
   type: 'info' | 'success' | 'error' | 'warning'
 }
 
+export interface TranscriptHistoryItem {
+  id: string
+  text: string
+  timestamp: number
+  intent: IntentType
+}
+
 export interface AppState {
   // Recording
   isRecording: boolean
@@ -66,6 +73,8 @@ export interface AppState {
   
   // Transcription
   transcript: string
+  realtimeTranscript: string
+  transcriptHistory: TranscriptHistoryItem[]
   
   // Intent
   intent: IntentType
@@ -95,6 +104,9 @@ export interface AppState {
   setForcedMode: (mode: ForcedMode) => void
   setRecordingTime: (time: number) => void
   setTranscript: (transcript: string) => void
+  setRealtimeTranscript: (transcript: string) => void
+  addTranscriptToHistory: (item: TranscriptHistoryItem) => void
+  clearTranscriptHistory: () => void
   setIntent: (intent: IntentType) => void
   setLoadingState: (state: LoadingState) => void
   setSummary: (summary: string) => void

@@ -85,11 +85,21 @@ export function VoiceAgent() {
   }, [apiConfig])
 
   const handleStartRecording = useCallback(() => {
+    // If there's an existing transcript, push it to history before resetting
+    if (store.transcript && store.transcript.trim()) {
+      store.addTranscriptToHistory({
+        id: `hist_${Date.now()}`,
+        text: store.transcript,
+        timestamp: Date.now(),
+        intent: store.intent
+      })
+    }
+    
     store.reset()
     store.setIsRecording(true)
     store.setLoadingState('recording')
     store.addLog('Recording started', 'info')
-  }, [])
+  }, [store.transcript, store.intent])
 
   const handleStopRecording = useCallback(async (audioBlob: Blob) => {
     store.setIsRecording(false)
@@ -427,15 +437,86 @@ export function VoiceAgent() {
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
               onError={(error) => store.addLog(error, 'error')}
+              onRealtimeTranscript={(text) => store.setRealtimeTranscript(text)}
               maxDuration={180}
             />
           </div>
 
+          {/* Real-time transcript display */}
+          {(store.isRecording || store.realtimeTranscript) && !store.transcript && (
+            <div className="p-4 rounded-lg bg-secondary/30 border border-border/50 transition-all">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  store.isRecording ? "bg-destructive animate-pulse" : "bg-muted"
+                )} />
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  {store.isRecording ? 'Live Transcription' : 'Preview'}
+                </p>
+              </div>
+              <p className="text-foreground/80 min-h-[1.5rem]">
+                {store.realtimeTranscript || (store.isRecording ? 'Listening...' : '')}
+              </p>
+            </div>
+          )}
+
           {/* Transcript display */}
           {store.transcript && (
             <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-              <p className="text-sm text-muted-foreground mb-1">Transcript:</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-muted-foreground">Current Transcript:</p>
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full",
+                  store.intent === 'publish' 
+                    ? "bg-research/20 text-research" 
+                    : store.intent === 'note'
+                    ? "bg-note/20 text-note"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  {store.intent === 'unknown' ? 'Processing' : store.intent}
+                </span>
+              </div>
               <p className="text-foreground">{store.transcript}</p>
+            </div>
+          )}
+
+          {/* Transcript history */}
+          {store.transcriptHistory.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">Recent Transcripts:</p>
+                <button 
+                  onClick={() => store.clearTranscriptHistory()}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {store.transcriptHistory.slice(0, 5).map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="p-3 rounded-lg bg-muted/30 border border-border/50 text-sm"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn(
+                        "text-xs px-2 py-0.5 rounded-full",
+                        item.intent === 'publish' 
+                          ? "bg-research/20 text-research" 
+                          : item.intent === 'note'
+                          ? "bg-note/20 text-note"
+                          : "bg-muted text-muted-foreground"
+                      )}>
+                        {item.intent === 'unknown' ? 'unknown' : item.intent}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-foreground/70 line-clamp-2">{item.text}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

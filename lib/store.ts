@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode, PublishRecord } from './types'
+import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode, PublishRecord, TranscriptHistoryItem } from './types'
 
 const formatTime = () => {
   return new Date().toLocaleTimeString('en-US', { 
@@ -17,6 +17,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // Transcription
   transcript: '',
+  realtimeTranscript: '',
+  transcriptHistory: [],
   
   // Intent
   intent: 'unknown',
@@ -46,6 +48,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setForcedMode: (forcedMode: ForcedMode) => set({ forcedMode }),
   setRecordingTime: (recordingTime: number) => set({ recordingTime }),
   setTranscript: (transcript: string) => set({ transcript }),
+  setRealtimeTranscript: (realtimeTranscript: string) => set({ realtimeTranscript }),
+  addTranscriptToHistory: (item: TranscriptHistoryItem) => set((state) => ({
+    transcriptHistory: [item, ...state.transcriptHistory].slice(0, 20) // Keep last 20
+  })),
+  clearTranscriptHistory: () => set({ transcriptHistory: [] }),
   setIntent: (intent: IntentType) => set({ intent }),
   setLoadingState: (loadingState: LoadingState) => set({ loadingState }),
   setSummary: (summary: string) => set({ summary }),
@@ -77,6 +84,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     isRecording: false,
     recordingTime: 0,
     transcript: '',
+    realtimeTranscript: '',
     intent: 'unknown',
     loadingState: 'idle',
     summary: '',
