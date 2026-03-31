@@ -114,23 +114,26 @@ export async function detectIntent(
    用户想要研究、分析、了解某个话题，或创建用于发布的内容
 2. "note" - They want to save a note, record a thought, or remember something personal
    用户想要保存笔记、记录想法或记住个人事项
+3. "action" - They want to perform an action like adding calendar events, setting reminders, creating tasks, or setting timers
+   用户想要执行操作，如添加日历事件、设置提醒、创建任务或设置计时器
 
 User input / 用户输入: "${text}"
 
-Respond with ONLY one word: either "publish" or "note".
-只回复一个词："publish" 或 "note"。`
+Respond with ONLY one word: "publish", "note", or "action".
+只回复一个词："publish"、"note" 或 "action"。`
 
   try {
     const content = await callLLM(
       provider, 
       apiKey, 
       model,
-      'You are an intent classifier. Respond with only one word: "publish" or "note". 你是一个意图分类器，只回复一个词："publish" 或 "note"。',
+      'You are an intent classifier. Respond with only one word: "publish", "note", or "action". 你是一个意图分类器，只回复一个词："publish"、"note" 或 "action"。',
       prompt,
       { temperature: 0.1, maxTokens: 10 }
     )
 
     const result = content.toLowerCase().trim()
+    if (result.includes('action')) return 'action'
     if (result.includes('publish')) return 'publish'
     if (result.includes('note')) return 'note'
     return 'unknown'
@@ -146,6 +149,19 @@ Respond with ONLY one word: either "publish" or "note".
 function detectIntentLocal(text: string): IntentType {
   const lower = text.toLowerCase()
   
+  // Action keywords (highest priority - explicit action requests)
+  const actionKeywordsEN = [
+    'add to calendar', 'schedule', 'set reminder', 'remind me', 'create task',
+    'add task', 'set timer', 'timer for', 'appointment', 'meeting at',
+    'add event', 'book', 'reserve'
+  ]
+  
+  const actionKeywordsCN = [
+    '添加日历', '日程安排', '设置提醒', '提醒我', '创建任务',
+    '添加任务', '设置计时', '计时', '预约', '会议在',
+    '添加事件', '预订', '预留'
+  ]
+  
   // English keywords
   const publishKeywordsEN = [
     'research', 'analyze', 'study', 'investigate', 'look into',
@@ -155,29 +171,34 @@ function detectIntentLocal(text: string): IntentType {
   
   const noteKeywordsEN = [
     'note', 'record', 'save', 'remember', 'write down',
-    'thought', 'idea', 'realized', 'reminder', 'note to self'
+    'thought', 'idea', 'realized', 'note to self'
   ]
 
   // Chinese keywords
   const publishKeywordsCN = [
     '研究', '分析', '调研', '调查', '了解', '查一下', '查查',
     '什么是', '是什么', '怎么', '如何', '告诉我', '解释',
-    '市场', '趋势', '行业', '竞争', '发布', '创建', '写', '撰写'
+    '市场', '趋势', '行业', '竞争', '发布', '撰写'
   ]
   
   const noteKeywordsCN = [
     '笔记', '记录', '保存', '记住', '写下', '备忘',
-    '想法', '灵感', '突然想到', '提醒', '记一下', '记下来', '备注'
+    '想法', '灵感', '突然想到', '记一下', '记下来', '备注'
   ]
   
+  const hasActionEN = actionKeywordsEN.some(kw => lower.includes(kw))
+  const hasActionCN = actionKeywordsCN.some(kw => text.includes(kw))
   const hasPublishEN = publishKeywordsEN.some(kw => lower.includes(kw))
   const hasNoteEN = noteKeywordsEN.some(kw => lower.includes(kw))
   const hasPublishCN = publishKeywordsCN.some(kw => text.includes(kw))
   const hasNoteCN = noteKeywordsCN.some(kw => text.includes(kw))
   
+  const hasAction = hasActionEN || hasActionCN
   const hasPublish = hasPublishEN || hasPublishCN
   const hasNote = hasNoteEN || hasNoteCN
   
+  // Priority: action > note > publish
+  if (hasAction) return 'action'
   if (hasNote && !hasPublish) return 'note'
   if (hasPublish) return 'publish'
   return 'publish' // Default to publish

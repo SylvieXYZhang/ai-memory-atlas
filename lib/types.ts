@@ -36,9 +36,48 @@ export interface TemplateData {
   research?: ResearchData
 }
 
-export type IntentType = 'publish' | 'note' | 'unknown'
+export type IntentType = 'publish' | 'note' | 'action' | 'unknown'
 
-export type ForcedMode = 'auto' | 'publish' | 'note'
+export type ForcedMode = 'auto' | 'publish' | 'note' | 'action'
+
+// Action Mode Types
+export type ActionCategory = 'calendar' | 'reminder' | 'task' | 'timer' | 'unknown'
+export type ActionStatus = 'pending' | 'confirmed' | 'executed' | 'cancelled' | 'failed'
+
+export interface ParsedAction {
+  id: string
+  category: ActionCategory
+  title: string
+  description: string
+  originalText: string
+  timestamp: number
+  status: ActionStatus
+  
+  // Calendar specific
+  eventDate?: string
+  eventTime?: string
+  eventEndTime?: string
+  eventLocation?: string
+  
+  // Reminder specific
+  reminderTime?: string
+  
+  // Task specific
+  taskPriority?: 'low' | 'medium' | 'high'
+  taskDueDate?: string
+  
+  // Timer specific
+  timerDuration?: number // in minutes
+  
+  // Execution result
+  executionResult?: string
+  executionError?: string
+}
+
+export interface ActionHistoryItem {
+  action: ParsedAction
+  executedAt?: number
+}
 
 export type LoadingState = 
   | 'idle' 
@@ -48,6 +87,8 @@ export type LoadingState =
   | 'generating-summary'
   | 'deep-research'
   | 'saving-note'
+  | 'parsing-action'
+  | 'executing-action'
   | 'complete'
   | 'error'
 
@@ -94,6 +135,10 @@ export interface AppState {
   // Publish history
   publishHistory: PublishRecord[]
   
+  // Action mode
+  currentAction: ParsedAction | null
+  actionHistory: ActionHistoryItem[]
+  
   // UI state
   activeTab: TemplateType
   forcedMode: ForcedMode
@@ -117,6 +162,9 @@ export interface AppState {
   setActiveTab: (tab: TemplateType) => void
   addPublishRecord: (record: PublishRecord) => void
   setPublishHistory: (history: PublishRecord[]) => void
+  setCurrentAction: (action: ParsedAction | null) => void
+  addActionToHistory: (item: ActionHistoryItem) => void
+  updateActionStatus: (actionId: string, status: ActionStatus, result?: string, error?: string) => void
   addLog: (message: string, type: LogEntry['type']) => void
   clearLogs: () => void
   reset: () => void

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Settings, Volume2, FileText, Lightbulb, FlaskConical } from 'lucide-react'
+import { Settings, Volume2, FileText, Lightbulb, FlaskConical, Zap } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { VoiceRecorder } from './voice-recorder'
 import { DebugPanel } from './debug-panel'
@@ -10,6 +10,7 @@ import { NoteDisplay } from './note-display'
 import { HistoryPanel } from './history-panel'
 import { MagicButton } from './magic-button'
 import { SettingsPortal } from './settings-portal'
+import { ActionPreview } from './action-preview'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,7 @@ import { transcribeAudio, mockTranscribeAudio } from '@/lib/services/asr'
 import { detectIntent, generateSummary, performDeepResearch } from '@/lib/services/llm'
 import { searchSimilarNotes } from '@/lib/services/vector-search'
 import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
+import { parseAction, executeAction } from '@/lib/services/actions'
 import type { TemplateData, PublishRecord } from '@/lib/types'
 import { 
   type UserAPIConfig, 
@@ -42,6 +44,7 @@ export function VoiceAgent() {
   const [isPublishingNote, setIsPublishingNote] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [bufferCountdown, setBufferCountdown] = useState<number | null>(null)
+  const [isExecutingAction, setIsExecutingAction] = useState(false)
 
   // Load API config and notes on mount
   useEffect(() => {
@@ -147,7 +150,7 @@ export function VoiceAgent() {
       store.addLog(`Transcription complete: "${transcript.slice(0, 50)}..."`, 'success')
 
       // Resolve intent — respect manual override, fall back to AI detection
-      let intent: 'note' | 'publish'
+      let intent: 'note' | 'publish' | 'action'
       const forcedMode = store.forcedMode
       if (forcedMode === 'note') {
         intent = 'note'
@@ -155,6 +158,9 @@ export function VoiceAgent() {
       } else if (forcedMode === 'publish') {
         intent = 'publish'
         store.addLog('Mode: Publish (manual)', 'info')
+      } else if (forcedMode === 'action') {
+        intent = 'action'
+        store.addLog('Mode: Action (manual)', 'info')
       } else {
         store.setLoadingState('analyzing')
         store.addLog('Detecting intent automatically...', 'info')
@@ -166,12 +172,29 @@ export function VoiceAgent() {
           intentAssignment?.provider,
           intentAssignment?.model
         )
-        intent = detected === 'note' ? 'note' : 'publish'
+        intent = detected === 'action' ? 'action' : detected === 'note' ? 'note' : 'publish'
         store.addLog(`Intent detected: ${intent}`, 'success')
       }
       store.setIntent(intent)
 
-      if (intent === 'note') {
+      if (intent === 'action') {
+        // Action flow — parse and show preview for confirmation
+        store.setLoadingState('parsing-action')
+        store.addLog('Parsing action from speech...', 'info')
+        
+        const intentKey = getKeyForFunction('intent')
+        const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
+        const parsedAction = await parseAction(
+          transcript,
+          intentKey,
+          intentAssignment?.provider,
+          intentAssignment?.model
+        )
+        
+        store.setCurrentAction(parsedAction)
+        store.addLog(`Action parsed: ${parsedAction.category} - ${parsedAction.title}`, 'success')
+        store.setLoadingState('complete')
+      } else if (intent === 'note') {
         // Note flow — save the verbatim transcript, no summarisation
         store.setLoadingState('saving-note')
         store.addLog('Saving verbatim note...', 'info')
@@ -264,6 +287,47 @@ export function VoiceAgent() {
       bufferTimerRef.current = null
     }, BUFFER_TIME_MS)
   }, [store.recordingTime, processAudio])
+
+  // Action handlers
+  const handleConfirmAction = useCallback(async () => {
+    if (!store.currentAction) return
+    
+    setIsExecutingAction(true)
+    store.setLoadingState('executing-action')
+    store.updateActionStatus(store.currentAction.id, 'confirmed')
+    store.addLog(`Executing action: ${store.currentAction.title}...`, 'info')
+    
+    try {
+      const result = await executeAction(store.currentAction)
+      
+      if (result.success) {
+        store.updateActionStatus(store.currentAction.id, 'executed', result.message)
+        store.addActionToHistory({ action: store.currentAction, executedAt: Date.now() })
+        store.addLog(result.message, 'success')
+      } else {
+        store.updateActionStatus(store.currentAction.id, 'failed', undefined, result.message)
+        store.addLog(`Action failed: ${result.message}`, 'error')
+      }
+      
+      store.setLoadingState('complete')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      store.updateActionStatus(store.currentAction.id, 'failed', undefined, message)
+      store.addLog(`Action error: ${message}`, 'error')
+      store.setLoadingState('error')
+    } finally {
+      setIsExecutingAction(false)
+    }
+  }, [store.currentAction])
+
+  const handleCancelAction = useCallback(() => {
+    if (store.currentAction) {
+      store.updateActionStatus(store.currentAction.id, 'cancelled')
+      store.addLog('Action cancelled', 'info')
+    }
+    store.setCurrentAction(null)
+    store.setLoadingState('idle')
+  }, [store.currentAction])
 
   const handleDeepResearch = useCallback(async () => {
     if (!store.transcript) return
@@ -361,11 +425,12 @@ export function VoiceAgent() {
     }
   }, [store.notes, savePublishRecord])
 
-  const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
+  const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note', 'parsing-action'].includes(store.loadingState)
   const isInBuffer = bufferCountdown !== null
   const isDeepResearching = store.loadingState === 'deep-research'
   const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
   const showNoteResult = store.intent === 'note' && store.currentNote && store.loadingState === 'complete'
+  const showActionResult = store.intent === 'action' && store.currentAction && ['complete', 'executing-action'].includes(store.loadingState)
 
   const templateData: TemplateData = {
     topic: store.transcript,
@@ -480,13 +545,29 @@ export function VoiceAgent() {
                 <Lightbulb className="w-3.5 h-3.5" />
                 Note
               </button>
+              {/* Action */}
+              <button
+                onClick={() => store.setForcedMode('action')}
+                disabled={store.isRecording || isProcessing}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed",
+                  store.forcedMode === 'action'
+                    ? "bg-purple-500 text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Action
+              </button>
             </div>
             <p className="text-xs text-muted-foreground">
               {store.forcedMode === 'auto'
                 ? "AI will detect mode from your speech"
                 : store.forcedMode === 'publish'
                 ? "Every recording will be processed for publishing"
-                : "Every recording will be saved as a verbatim note"}
+                : store.forcedMode === 'note'
+                ? "Every recording will be saved as a verbatim note"
+                : "Every recording will be parsed as an action to execute"}
             </p>
           </div>
 
@@ -550,6 +631,8 @@ export function VoiceAgent() {
                     ? "bg-research/20 text-research" 
                     : store.intent === 'note'
                     ? "bg-note/20 text-note"
+                    : store.intent === 'action'
+                    ? "bg-purple-500/20 text-purple-500"
                     : "bg-muted text-muted-foreground"
                 )}>
                   {store.intent === 'unknown' ? 'Processing' : store.intent}
@@ -584,6 +667,8 @@ export function VoiceAgent() {
                           ? "bg-research/20 text-research" 
                           : item.intent === 'note'
                           ? "bg-note/20 text-note"
+                          : item.intent === 'action'
+                          ? "bg-purple-500/20 text-purple-500"
                           : "bg-muted text-muted-foreground"
                       )}>
                         {item.intent === 'unknown' ? 'unknown' : item.intent}
@@ -597,6 +682,16 @@ export function VoiceAgent() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Action results */}
+          {showActionResult && store.currentAction && (
+            <ActionPreview
+              action={store.currentAction}
+              onConfirm={handleConfirmAction}
+              onCancel={handleCancelAction}
+              isExecuting={isExecutingAction}
+            />
           )}
 
           {/* Publish results */}

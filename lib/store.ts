@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode, PublishRecord, TranscriptHistoryItem } from './types'
+import type { AppState, LogEntry, IntentType, LoadingState, NoteRecord, ResearchData, SearchResult, TemplateType, ForcedMode, PublishRecord, TranscriptHistoryItem, ParsedAction, ActionHistoryItem, ActionStatus } from './types'
 
 const formatTime = () => {
   return new Date().toLocaleTimeString('en-US', { 
@@ -38,6 +38,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Publish history
   publishHistory: [],
   
+  // Action mode
+  currentAction: null,
+  actionHistory: [],
+  
   // UI state
   activeTab: 'social',
   forcedMode: 'auto' as ForcedMode,
@@ -67,6 +71,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
   setPublishHistory: (publishHistory: PublishRecord[]) => set({ publishHistory }),
   
+  setCurrentAction: (currentAction: ParsedAction | null) => set({ currentAction }),
+  addActionToHistory: (item: ActionHistoryItem) => set((state) => ({
+    actionHistory: [item, ...state.actionHistory].slice(0, 30) // Keep last 30
+  })),
+  updateActionStatus: (actionId: string, status: ActionStatus, result?: string, error?: string) => set((state) => {
+    const updateAction = (action: ParsedAction): ParsedAction => ({
+      ...action,
+      status,
+      executionResult: result,
+      executionError: error
+    })
+    
+    return {
+      currentAction: state.currentAction?.id === actionId 
+        ? updateAction(state.currentAction) 
+        : state.currentAction,
+      actionHistory: state.actionHistory.map(item => 
+        item.action.id === actionId 
+          ? { ...item, action: updateAction(item.action), executedAt: Date.now() }
+          : item
+      )
+    }
+  }),
+  
   addLog: (message: string, type: LogEntry['type'] = 'info') => {
     const entry: LogEntry = {
       timestamp: formatTime(),
@@ -91,6 +119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     researchData: null,
     currentNote: null,
     relatedNotes: [],
+    currentAction: null,
     logs: []
   })
 }))
