@@ -46,10 +46,35 @@ const statusConfig = {
   failed: { icon: AlertCircle, color: 'text-destructive', label: 'Failed / 失败' }
 }
 
+// Explain what will happen for each action type
+const actionHints: Record<ActionCategory, { en: string; cn: string }> = {
+  calendar: { 
+    en: 'Downloads .ics file to import into your calendar app (Google, Apple, Outlook)', 
+    cn: '下载.ics文件导入到日历应用（Google、Apple、Outlook）' 
+  },
+  reminder: { 
+    en: 'Sets a browser notification at the specified time', 
+    cn: '在指定时间发送浏览器通知提醒' 
+  },
+  task: { 
+    en: 'Saves task locally, viewable in History panel', 
+    cn: '本地保存任务，可在历史面板查看' 
+  },
+  timer: { 
+    en: 'Starts countdown, notifies when complete', 
+    cn: '开始倒计时，完成时发送通知' 
+  },
+  unknown: { 
+    en: 'Action type not recognized', 
+    cn: '未识别的操作类型' 
+  }
+}
+
 export function ActionPreview({ action, onConfirm, onCancel, isExecuting }: ActionPreviewProps) {
   const Icon = categoryIcons[action.category] || Zap
   const colorClass = categoryColors[action.category] || categoryColors.unknown
   const labels = categoryLabels[action.category] || categoryLabels.unknown
+  const hints = actionHints[action.category] || actionHints.unknown
   const status = statusConfig[action.status]
   const StatusIcon = status.icon
 
@@ -168,6 +193,15 @@ export function ActionPreview({ action, onConfirm, onCancel, isExecuting }: Acti
         {action.executionError && (
           <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
             <p className="text-sm text-destructive">{action.executionError}</p>
+          </div>
+        )}
+
+        {/* What will happen hint */}
+        {action.status === 'pending' && (
+          <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+            <p className="text-xs text-muted-foreground mb-1">What will happen / 将执行的操作:</p>
+            <p className="text-sm">{hints.en}</p>
+            <p className="text-sm text-muted-foreground">{hints.cn}</p>
           </div>
         )}
 
