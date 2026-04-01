@@ -145,25 +145,44 @@ export function VoiceAgent() {
   const processAudio = useCallback(async (audioBlob: Blob) => {
     store.setLoadingState('transcribing')
     store.addLog('Starting transcription...', 'info')
+    
+    // Check if we have realtime transcript to use
+    const realtimeText = store.realtimeTranscript
+    console.log('[v0] Realtime transcript available:', realtimeText)
 
     try {
       // Transcribe audio
       let transcript: string
       const asrKey = getKeyForFunction('asr')
       const asrAssignment = apiConfig ? getAssignment(apiConfig, 'asr') : null
-      if (asrKey && asrAssignment) {
+      
+      // If we have realtime transcript and no ASR key, use realtime transcript
+      if (!asrKey && realtimeText && realtimeText.trim()) {
+        console.log('[v0] Using realtime transcript instead of ASR')
+        transcript = realtimeText
+      } else if (asrKey && asrAssignment) {
+        console.log('[v0] Using ASR service:', asrAssignment.provider)
         transcript = await transcribeAudio(audioBlob, asrKey, asrAssignment.provider, asrAssignment.model)
       } else {
-        store.addLog('No ASR API key - using demo mode', 'warning')
-        transcript = await mockTranscribeAudio(store.recordingTime * 1000)
+        // No ASR key and no realtime transcript - check realtime again or use mock
+        if (realtimeText && realtimeText.trim()) {
+          console.log('[v0] Fallback to realtime transcript')
+          transcript = realtimeText
+        } else {
+          store.addLog('No ASR API key - using demo mode', 'warning')
+          transcript = await mockTranscribeAudio(store.recordingTime * 1000)
+        }
       }
       
+      console.log('[v0] Final transcript:', transcript)
       store.setTranscript(transcript)
       store.addLog(`Transcription complete: "${transcript.slice(0, 50)}..."`, 'success')
 
       // Resolve intent — respect manual override, fall back to AI detection
       let intent: 'note' | 'publish' | 'action'
       const forcedMode = store.forcedMode
+      console.log('[v0] forcedMode from store:', forcedMode)
+      console.log('[v0] transcript:', transcript)
       if (forcedMode === 'note') {
         intent = 'note'
         store.addLog('Mode: Note (manual)', 'info')

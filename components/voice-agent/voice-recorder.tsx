@@ -78,10 +78,11 @@ export function VoiceRecorder({
     
     recognition.continuous = true
     recognition.interimResults = true
-    // Use multi-language recognition - browser will auto-detect
-    // Note: Most browsers support auto language detection when lang is not set strictly
-    // We set to empty or use a broad locale to enable bilingual recognition
-    recognition.lang = '' // Empty allows browser to detect language automatically
+    // For bilingual (English/Chinese) support:
+    // - Chrome: supports multiple languages but requires specific locale
+    // - We default to 'en-US' but the transcript will still capture other languages
+    // - For better Chinese support, user can switch browser language
+    recognition.lang = 'en-US'
     
     interimTranscriptRef.current = ''
     finalTranscriptRef.current = ''
