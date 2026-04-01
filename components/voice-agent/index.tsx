@@ -323,13 +323,16 @@ export function VoiceAgent() {
   const handleConfirmAction = useCallback(async () => {
     if (!store.currentAction) return
     
+    console.log('[v0] handleConfirmAction called with action:', store.currentAction)
     setIsExecutingAction(true)
     store.setLoadingState('executing-action')
     store.updateActionStatus(store.currentAction.id, 'confirmed')
     store.addLog(`Executing action: ${store.currentAction.title}...`, 'info')
     
     try {
+      console.log('[v0] Calling executeAction...')
       const result = await executeAction(store.currentAction)
+      console.log('[v0] executeAction result:', result)
       
       if (result.success) {
         store.updateActionStatus(store.currentAction.id, 'executed', result.message)

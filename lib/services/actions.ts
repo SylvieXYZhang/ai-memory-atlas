@@ -244,21 +244,27 @@ function parseActionLocal(text: string): ParsedAction {
  * Execute an action - REAL IMPLEMENTATIONS
  */
 export async function executeAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
+  console.log('[v0] executeAction called:', action.category, action.title)
   
   switch (action.category) {
     case 'calendar':
+      console.log('[v0] Routing to executeCalendarAction')
       return executeCalendarAction(action)
     
     case 'reminder':
+      console.log('[v0] Routing to executeReminderAction')
       return executeReminderAction(action)
     
     case 'task':
+      console.log('[v0] Routing to executeTaskAction')
       return executeTaskAction(action)
     
     case 'timer':
+      console.log('[v0] Routing to executeTimerAction')
       return executeTimerAction(action)
     
     default:
+      console.log('[v0] Unknown action category:', action.category)
       return {
         success: false,
         message: `Unknown action category: ${action.category}. Supported: calendar, reminder, task, timer.`
@@ -275,7 +281,7 @@ async function executeCalendarAction(action: ParsedAction): Promise<{ success: b
   const config = loadCalendarConfig()
   const provider = config?.provider || 'ics'
   
-
+  console.log('[v0] executeCalendarAction:', { operation, provider, title: action.title })
   
   // Check if provider is connected (for non-ICS operations that need it)
   if (provider !== 'ics' && (operation === 'modify' || operation === 'delete' || operation === 'list')) {
@@ -302,9 +308,13 @@ async function executeCalendarAction(action: ParsedAction): Promise<{ success: b
       endDate: `${eventDate}T${endTime}:00`
     }
     
+    console.log('[v0] Calendar event to process:', calendarEvent)
+    
     switch (operation) {
       case 'add':
+        console.log('[v0] Calling addCalendarEvent with:', calendarEvent)
         const addResult = await addCalendarEvent(calendarEvent)
+        console.log('[v0] addCalendarEvent result:', addResult)
         return {
           success: addResult.success,
           message: addResult.message,
