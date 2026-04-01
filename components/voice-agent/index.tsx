@@ -286,6 +286,7 @@ export function VoiceAgent() {
   }, [store.recordingTime, apiConfig, getKeyForFunction])
 
   const handleStopRecording = useCallback((audioBlob: Blob) => {
+    console.log('[v0] handleStopRecording called, blob size:', audioBlob.size)
     store.setIsRecording(false)
     store.addLog(`Recording stopped (${store.recordingTime}s)`, 'info')
     
@@ -310,13 +311,17 @@ export function VoiceAgent() {
     
     // Set buffer timer to process after 2 seconds
     bufferTimerRef.current = setTimeout(() => {
+      console.log('[v0] Buffer expired, processing audio')
       clearInterval(countdownInterval)
       setBufferCountdown(null)
       
       if (pendingAudioRef.current) {
+        console.log('[v0] Calling processAudio with blob')
         store.addLog('Buffer expired - processing audio', 'info')
         processAudio(pendingAudioRef.current)
         pendingAudioRef.current = null
+      } else {
+        console.log('[v0] No pending audio to process')
       }
       bufferTimerRef.current = null
     }, BUFFER_TIME_MS)
