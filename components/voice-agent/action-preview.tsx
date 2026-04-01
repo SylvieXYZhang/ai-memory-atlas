@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { ParsedAction, ActionCategory, CalendarOperation } from '@/lib/types'
+import { loadCalendarConfig, isProviderConnected } from '@/lib/services/calendar'
 
 interface ActionPreviewProps {
   action: ParsedAction
@@ -53,29 +54,66 @@ const calendarOperationLabels: Record<CalendarOperation, { en: string; cn: strin
   list: { en: 'List Events', cn: '列出事件', color: 'bg-blue-500/20 text-blue-600 border-blue-500/30' }
 }
 
-// Get action hint based on category and operation
-function getActionHint(category: ActionCategory, operation?: CalendarOperation): { en: string; cn: string } {
+// Get action hint based on category, operation, and connection status
+function getActionHint(category: ActionCategory, operation?: CalendarOperation): { en: string; cn: string; method?: string } {
   if (category === 'calendar') {
+    const config = loadCalendarConfig()
+    const provider = config?.provider || 'ics'
+    const isConnected = provider !== 'ics' && isProviderConnected(provider)
+    const providerName = provider === 'google' ? 'Google Calendar' : provider === 'outlook' ? 'Outlook' : 'ICS'
+    
     switch (operation) {
       case 'add':
+        if (isConnected) {
+          return { 
+            en: `Adds event directly to ${providerName}`, 
+            cn: `直接添加事件到${providerName}`,
+            method: providerName
+          }
+        }
         return { 
-          en: 'Adds event to your connected calendar (Google/Outlook) or downloads .ics file', 
-          cn: '将事件添加到已连接的日历（Google/Outlook）或下载.ics文件' 
+          en: 'Downloads .ics file - open it to add to any calendar app', 
+          cn: '下载.ics文件 - 打开即可添加到任何日历应用',
+          method: 'ICS Download'
         }
       case 'modify':
+        if (isConnected) {
+          return { 
+            en: `Updates the event in ${providerName}`, 
+            cn: `更新${providerName}中的事件`,
+            method: providerName
+          }
+        }
         return { 
-          en: 'Updates the event in your connected calendar', 
-          cn: '更新已连接日历中的事件' 
+          en: 'Connect Google or Outlook in Settings to modify events', 
+          cn: '在设置中连接Google或Outlook以修改事件',
+          method: 'Not available'
         }
       case 'delete':
+        if (isConnected) {
+          return { 
+            en: `Removes the event from ${providerName}`, 
+            cn: `从${providerName}中删除事件`,
+            method: providerName
+          }
+        }
         return { 
-          en: 'Removes the event from your connected calendar', 
-          cn: '从已连接日历中删除事件' 
+          en: 'Connect Google or Outlook in Settings to delete events', 
+          cn: '在设置中连接Google或Outlook以删除事件',
+          method: 'Not available'
         }
       case 'list':
+        if (isConnected) {
+          return { 
+            en: `Shows upcoming events from ${providerName}`, 
+            cn: `显示${providerName}中的即将到来的事件`,
+            method: providerName
+          }
+        }
         return { 
-          en: 'Shows upcoming events from your connected calendar', 
-          cn: '显示已连接日历中的即将到来的事件' 
+          en: 'Connect Google or Outlook in Settings to list events', 
+          cn: '在设置中连接Google或Outlook以列出事件',
+          method: 'Not available'
         }
       default:
         return { 
@@ -233,7 +271,24 @@ export function ActionPreview({ action, onConfirm, onCancel, isExecuting }: Acti
         {/* What will happen hint */}
         {action.status === 'pending' && (
           <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-            <p className="text-xs text-muted-foreground mb-1">What will happen / 将执行的操作:</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-muted-foreground">What will happen / 将执行的操作:</p>
+              {hints.method && (
+                <Badge 
+                  variant="outline" 
+                  className={cn(
+                    "text-xs",
+                    hints.method === 'Not available' 
+                      ? "bg-destructive/10 text-destructive border-destructive/30" 
+                      : hints.method === 'ICS Download'
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-green-500/10 text-green-600 border-green-500/30"
+                  )}
+                >
+                  {hints.method}
+                </Badge>
+              )}
+            </div>
             <p className="text-sm">{hints.en}</p>
             <p className="text-sm text-muted-foreground">{hints.cn}</p>
           </div>

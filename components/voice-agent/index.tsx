@@ -21,6 +21,7 @@ import { detectIntent, generateSummary, performDeepResearch } from '@/lib/servic
 import { searchSimilarNotes } from '@/lib/services/vector-search'
 import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
 import { parseAction, executeAction } from '@/lib/services/actions'
+import { handleGoogleCallback, handleOutlookCallback } from '@/lib/services/calendar'
 import type { TemplateData, PublishRecord } from '@/lib/types'
 import { 
   type UserAPIConfig, 
@@ -58,8 +59,19 @@ export function VoiceAgent() {
       if (saved) {
         try {
           store.setPublishHistory(JSON.parse(saved))
-        } catch (error) {
-          console.error('[v0] Error loading publish history:', error)
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // Handle OAuth callbacks from calendar integrations
+      if (window.location.hash.includes('access_token')) {
+        const googleToken = handleGoogleCallback()
+        const outlookToken = handleOutlookCallback()
+        if (googleToken || outlookToken) {
+          store.addLog(`Calendar connected: ${googleToken ? 'Google' : 'Outlook'}`, 'success')
+          // Open settings to show connection status
+          setSettingsOpen(true)
         }
       }
     }

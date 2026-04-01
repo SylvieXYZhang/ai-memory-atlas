@@ -275,7 +275,7 @@ async function executeCalendarAction(action: ParsedAction): Promise<{ success: b
   const config = loadCalendarConfig()
   const provider = config?.provider || 'ics'
   
-  console.log('[v0] Executing calendar action:', operation, 'via', provider)
+
   
   // Check if provider is connected (for non-ICS operations that need it)
   if (provider !== 'ics' && (operation === 'modify' || operation === 'delete' || operation === 'list')) {
@@ -395,7 +395,6 @@ async function executeCalendarAction(action: ParsedAction): Promise<{ success: b
         }
     }
   } catch (error) {
-    console.log('[v0] Calendar action failed:', error)
     return {
       success: false,
       message: `Calendar operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -407,7 +406,6 @@ async function executeCalendarAction(action: ParsedAction): Promise<{ success: b
  * REMINDER: Use Browser Notifications API
  */
 async function executeReminderAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
-  console.log('[v0] Executing reminder action')
   
   // Check if notifications are supported
   if (!('Notification' in window)) {
@@ -468,14 +466,13 @@ async function executeReminderAction(action: ParsedAction): Promise<{ success: b
       tag: action.id,
       requireInteraction: true
     })
-    console.log('[v0] Reminder notification shown:', action.title)
+
   }, delayMs)
   
   // Store timer reference
   activeTimers.set(action.id, timerId)
   
   const delayMinutes = Math.round(delayMs / 60000)
-  console.log('[v0] Reminder set for', delayMinutes, 'minutes')
   
   return {
     success: true,
@@ -488,7 +485,6 @@ async function executeReminderAction(action: ParsedAction): Promise<{ success: b
  * TASK: Store in localStorage
  */
 async function executeTaskAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
-  console.log('[v0] Executing task action - storing locally')
   
   try {
     // Load existing tasks
@@ -509,15 +505,12 @@ async function executeTaskAction(action: ParsedAction): Promise<{ success: boole
     existingTasks.unshift(task)
     localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(existingTasks))
     
-    console.log('[v0] Task saved:', task.id)
-    
     return {
       success: true,
       message: `Task added: "${action.title}" (${task.priority} priority)${task.dueDate ? `, due ${task.dueDate}` : ''}. View in History panel.`,
       data: task
     }
   } catch (error) {
-    console.log('[v0] Task action failed:', error)
     return {
       success: false,
       message: `Failed to create task: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -529,7 +522,6 @@ async function executeTaskAction(action: ParsedAction): Promise<{ success: boole
  * TIMER: Set countdown with browser notification
  */
 async function executeTimerAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
-  console.log('[v0] Executing timer action')
   
   // Check notification support
   if (!('Notification' in window)) {
@@ -570,7 +562,6 @@ async function executeTimerAction(action: ParsedAction): Promise<{ success: bool
       // Ignore audio errors
     }
     
-    console.log('[v0] Timer completed:', action.title)
     activeTimers.delete(action.id)
   }, durationMs)
   
@@ -579,7 +570,7 @@ async function executeTimerAction(action: ParsedAction): Promise<{ success: bool
   // Store timer info
   saveActiveTimer(action.id, Date.now() + durationMs, action.title)
   
-  console.log('[v0] Timer set for', durationMinutes, 'minutes')
+
   
   return {
     success: true,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Check, X, ExternalLink, Calendar, Settings2 } from 'lucide-react'
+import { Check, X, ExternalLink, Calendar, Settings2, Download, AlertCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,7 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
   const [outlookClientId, setOutlookClientId] = useState('')
   const [googleConnected, setGoogleConnected] = useState(false)
   const [outlookConnected, setOutlookConnected] = useState(false)
+  const [oauthMessage, setOauthMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
   // Load config and check connections
   useEffect(() => {
@@ -39,6 +40,9 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
       setConfig(savedConfig)
       setGoogleClientId(savedConfig.googleClientId || '')
       setOutlookClientId(savedConfig.outlookClientId || '')
+    } else {
+      // Set default config to ICS
+      setConfig({ provider: 'ics' })
     }
     setGoogleConnected(isProviderConnected('google'))
     setOutlookConnected(isProviderConnected('outlook'))
@@ -49,9 +53,16 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
       const outlookToken = handleOutlookCallback()
       if (googleToken) {
         setGoogleConnected(true)
+        setOauthMessage({ type: 'success', text: 'Google Calendar connected successfully!' })
+        // Auto-set as default if connected
+        saveCalendarConfig({ ...loadCalendarConfig(), provider: 'google' } as CalendarConfig)
+        setConfig(prev => prev ? { ...prev, provider: 'google' } : { provider: 'google' })
       }
       if (outlookToken) {
         setOutlookConnected(true)
+        setOauthMessage({ type: 'success', text: 'Outlook Calendar connected successfully!' })
+        saveCalendarConfig({ ...loadCalendarConfig(), provider: 'outlook' } as CalendarConfig)
+        setConfig(prev => prev ? { ...prev, provider: 'outlook' } : { provider: 'outlook' })
       }
     }
   }, [])
@@ -128,18 +139,48 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
       </CardHeader>
 
       <CardContent className="space-y-6">
+        {/* OAuth success/error message */}
+        {oauthMessage && (
+          <div className={cn(
+            "p-3 rounded-lg flex items-center gap-2",
+            oauthMessage.type === 'success' ? "bg-green-500/10 border border-green-500/30" : "bg-destructive/10 border border-destructive/30"
+          )}>
+            {oauthMessage.type === 'success' ? (
+              <Check className="w-4 h-4 text-green-500" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-destructive" />
+            )}
+            <p className={cn("text-sm", oauthMessage.type === 'success' ? "text-green-600" : "text-destructive")}>
+              {oauthMessage.text}
+            </p>
+            <Button variant="ghost" size="sm" className="ml-auto h-6 w-6 p-0" onClick={() => setOauthMessage(null)}>
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        )}
+
         {/* Current default */}
         <div className="p-3 rounded-lg bg-muted/50 border border-border">
           <p className="text-sm text-muted-foreground mb-1">Default Provider / 默认提供商:</p>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-sm">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" className={cn(
+              "text-sm",
+              config?.provider === 'google' ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+              config?.provider === 'outlook' ? "bg-blue-600/10 text-blue-700 border-blue-600/30" :
+              "bg-muted"
+            )}>
               {config?.provider === 'google' ? 'Google Calendar' : 
                config?.provider === 'outlook' ? 'Microsoft Outlook' : 
                'ICS Download (Universal)'}
             </Badge>
             {config?.provider === 'ics' && (
               <span className="text-xs text-muted-foreground">
-                Works with all calendar apps
+                No login needed - downloads .ics files for any calendar app
+              </span>
+            )}
+            {(config?.provider === 'google' || config?.provider === 'outlook') && (
+              <span className="text-xs text-green-600">
+                Direct add/modify/delete supported
               </span>
             )}
           </div>
@@ -270,12 +311,19 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
         </div>
 
         {/* ICS Fallback */}
-        <div className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
+        <div className={cn(
+          "space-y-3 p-4 rounded-lg border",
+          config?.provider === 'ics' 
+            ? "border-green-500/50 bg-green-500/5" 
+            : "border-border bg-muted/30"
+        )}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-muted-foreground" />
-              <h3 className="font-medium">ICS Download (Universal)</h3>
-              <Badge variant="outline" className="text-xs">Always Available</Badge>
+              <Download className="w-5 h-5 text-muted-foreground" />
+              <h3 className="font-medium">ICS Download (Default)</h3>
+              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
+                Always Available
+              </Badge>
             </div>
             {config?.provider !== 'ics' && (
               <Button 
@@ -288,9 +336,15 @@ export function CalendarSettings({ onClose }: CalendarSettingsProps) {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Downloads .ics files that work with any calendar app including Apple Calendar.
-            下载可用于任何日历应用的.ics文件，包括Apple日历。
+            Downloads .ics files that work with any calendar app including Apple Calendar, Google Calendar, and Outlook.
+            下载可用于任何日历应用的.ics文件，包括Apple日历、Google日历和Outlook。
           </p>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Badge variant="secondary">Apple Calendar</Badge>
+            <Badge variant="secondary">Google Calendar</Badge>
+            <Badge variant="secondary">Outlook</Badge>
+            <Badge variant="secondary">Any .ics compatible app</Badge>
+          </div>
         </div>
 
         {/* Help text */}
