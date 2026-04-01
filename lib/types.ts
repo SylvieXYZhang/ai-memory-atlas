@@ -43,6 +43,7 @@ export type ForcedMode = 'auto' | 'publish' | 'note' | 'action'
 // Action Mode Types
 export type ActionCategory = 'calendar' | 'reminder' | 'task' | 'timer' | 'unknown'
 export type ActionStatus = 'pending' | 'confirmed' | 'executed' | 'cancelled' | 'failed'
+export type CalendarOperation = 'add' | 'modify' | 'delete' | 'list'
 
 export interface ParsedAction {
   id: string
@@ -54,6 +55,8 @@ export interface ParsedAction {
   status: ActionStatus
   
   // Calendar specific
+  calendarOperation?: CalendarOperation
+  calendarEventId?: string  // For modify/delete operations
   eventDate?: string
   eventTime?: string
   eventEndTime?: string

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Key, Cpu, Check, AlertCircle, ChevronDown, Eye, EyeOff, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Key, Cpu, Check, AlertCircle, ChevronDown, Eye, EyeOff, Loader2, CheckCircle2, XCircle, Calendar } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,7 @@ import {
   isFunctionConfigured,
   validateAPIConfig,
 } from '@/lib/api-config'
+import { CalendarSettings } from './calendar-settings'
 
 interface SettingsPortalProps {
   onConfigChange?: (config: UserAPIConfig) => void
@@ -40,7 +41,7 @@ interface FunctionValidation {
 export function SettingsPortal({ onConfigChange, onClose }: SettingsPortalProps) {
   const [config, setConfig] = useState<UserAPIConfig>(getDefaultConfig())
   const [visibleKeys, setVisibleKeys] = useState<Set<Provider>>(new Set())
-  const [activeTab, setActiveTab] = useState<'keys' | 'models'>('keys')
+  const [activeTab, setActiveTab] = useState<'keys' | 'models' | 'calendar'>('keys')
   const [validations, setValidations] = useState<Record<FunctionType, FunctionValidation>>({
     asr: { state: 'idle' },
     intent: { state: 'idle' },
@@ -229,15 +230,19 @@ export function SettingsPortal({ onConfigChange, onClose }: SettingsPortalProps)
       </Card>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'keys' | 'models')}>
-        <TabsList className="grid w-full grid-cols-2 bg-secondary">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'keys' | 'models' | 'calendar')}>
+        <TabsList className="grid w-full grid-cols-3 bg-secondary">
           <TabsTrigger value="keys" className="gap-2 data-[state=active]:bg-background">
             <Key className="w-4 h-4" />
             API Keys
           </TabsTrigger>
           <TabsTrigger value="models" className="gap-2 data-[state=active]:bg-background">
             <Cpu className="w-4 h-4" />
-            Model Assignment
+            Models
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="gap-2 data-[state=active]:bg-background">
+            <Calendar className="w-4 h-4" />
+            Calendar
           </TabsTrigger>
         </TabsList>
 
@@ -441,6 +446,11 @@ export function SettingsPortal({ onConfigChange, onClose }: SettingsPortalProps)
               })}
             </div>
           </ScrollArea>
+        </TabsContent>
+
+        {/* Calendar Tab */}
+        <TabsContent value="calendar" className="mt-4">
+          <CalendarSettings />
         </TabsContent>
       </Tabs>
 

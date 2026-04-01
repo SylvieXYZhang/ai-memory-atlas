@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import type { ParsedAction, ActionCategory } from '@/lib/types'
+import type { ParsedAction, ActionCategory, CalendarOperation } from '@/lib/types'
 
 interface ActionPreviewProps {
   action: ParsedAction
@@ -46,37 +46,66 @@ const statusConfig = {
   failed: { icon: AlertCircle, color: 'text-destructive', label: 'Failed / 失败' }
 }
 
-// Explain what will happen for each action type
-const actionHints: Record<ActionCategory, { en: string; cn: string }> = {
-  calendar: { 
-    en: 'Downloads .ics file to import into your calendar app (Google, Apple, Outlook)', 
-    cn: '下载.ics文件导入到日历应用（Google、Apple、Outlook）' 
-  },
-  reminder: { 
-    en: 'Sets a browser notification at the specified time', 
-    cn: '在指定时间发送浏览器通知提醒' 
-  },
-  task: { 
-    en: 'Saves task locally, viewable in History panel', 
-    cn: '本地保存任务，可在历史面板查看' 
-  },
-  timer: { 
-    en: 'Starts countdown, notifies when complete', 
-    cn: '开始倒计时，完成时发送通知' 
-  },
-  unknown: { 
-    en: 'Action type not recognized', 
-    cn: '未识别的操作类型' 
+const calendarOperationLabels: Record<CalendarOperation, { en: string; cn: string; color: string }> = {
+  add: { en: 'Add Event', cn: '添加事件', color: 'bg-green-500/20 text-green-600 border-green-500/30' },
+  modify: { en: 'Modify Event', cn: '修改事件', color: 'bg-amber-500/20 text-amber-600 border-amber-500/30' },
+  delete: { en: 'Delete Event', cn: '删除事件', color: 'bg-red-500/20 text-red-600 border-red-500/30' },
+  list: { en: 'List Events', cn: '列出事件', color: 'bg-blue-500/20 text-blue-600 border-blue-500/30' }
+}
+
+// Get action hint based on category and operation
+function getActionHint(category: ActionCategory, operation?: CalendarOperation): { en: string; cn: string } {
+  if (category === 'calendar') {
+    switch (operation) {
+      case 'add':
+        return { 
+          en: 'Adds event to your connected calendar (Google/Outlook) or downloads .ics file', 
+          cn: '将事件添加到已连接的日历（Google/Outlook）或下载.ics文件' 
+        }
+      case 'modify':
+        return { 
+          en: 'Updates the event in your connected calendar', 
+          cn: '更新已连接日历中的事件' 
+        }
+      case 'delete':
+        return { 
+          en: 'Removes the event from your connected calendar', 
+          cn: '从已连接日历中删除事件' 
+        }
+      case 'list':
+        return { 
+          en: 'Shows upcoming events from your connected calendar', 
+          cn: '显示已连接日历中的即将到来的事件' 
+        }
+      default:
+        return { 
+          en: 'Adds event to your calendar', 
+          cn: '将事件添加到日历' 
+        }
+    }
   }
+  
+  const hints: Record<ActionCategory, { en: string; cn: string }> = {
+    calendar: { en: 'Adds event to your calendar', cn: '将事件添加到日历' },
+    reminder: { en: 'Sets a browser notification at the specified time', cn: '在指定时间发送浏览器通知提醒' },
+    task: { en: 'Saves task locally, viewable in History panel', cn: '本地保存任务，可在历史面板查看' },
+    timer: { en: 'Starts countdown, notifies when complete', cn: '开始倒计时，完成时发送通知' },
+    unknown: { en: 'Action type not recognized', cn: '未识别的操作类型' }
+  }
+  
+  return hints[category] || hints.unknown
 }
 
 export function ActionPreview({ action, onConfirm, onCancel, isExecuting }: ActionPreviewProps) {
   const Icon = categoryIcons[action.category] || Zap
   const colorClass = categoryColors[action.category] || categoryColors.unknown
   const labels = categoryLabels[action.category] || categoryLabels.unknown
-  const hints = actionHints[action.category] || actionHints.unknown
+  const hints = getActionHint(action.category, action.calendarOperation)
   const status = statusConfig[action.status]
   const StatusIcon = status.icon
+  const calendarOp = action.category === 'calendar' && action.calendarOperation 
+    ? calendarOperationLabels[action.calendarOperation] 
+    : null
 
   return (
     <Card className={cn('border-2 transition-all', colorClass)}>
@@ -88,10 +117,15 @@ export function ActionPreview({ action, onConfirm, onCancel, isExecuting }: Acti
             </div>
             <div>
               <CardTitle className="text-lg">{action.title}</CardTitle>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge variant="outline" className={cn('text-xs', colorClass)}>
                   {labels.en} / {labels.cn}
                 </Badge>
+                {calendarOp && (
+                  <Badge variant="outline" className={cn('text-xs', calendarOp.color)}>
+                    {calendarOp.en} / {calendarOp.cn}
+                  </Badge>
+                )}
                 <div className={cn('flex items-center gap-1 text-xs', status.color)}>
                   <StatusIcon className={cn('w-3 h-3', isExecuting && 'animate-spin')} />
                   <span>{status.label}</span>

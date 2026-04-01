@@ -24,8 +24,17 @@
 //    - Browser setTimeout + Notification: Native, works everywhere. LOW complexity.
 //    - DECISION: Use setTimeout with browser notification on completion.
 
-import type { ParsedAction, ActionCategory } from '../types'
+import type { ParsedAction, ActionCategory, CalendarOperation } from '../types'
 import { type Provider, getProviderInfo } from '../api-config'
+import { 
+  addCalendarEvent, 
+  updateCalendarEvent, 
+  deleteCalendarEvent,
+  listCalendarEvents,
+  loadCalendarConfig,
+  isProviderConnected,
+  type CalendarEvent 
+} from './calendar'
 
 interface LLMResponse {
   choices: Array<{
@@ -51,10 +60,9 @@ export async function parseAction(
   provider: Provider = 'dashscope',
   model: string = 'qwen-max'
 ): Promise<ParsedAction> {
-  console.log('[v0] parseAction called with:', { text: text.slice(0, 50), provider, model, hasApiKey: !!apiKey })
+  // Parse action from text using LLM or local fallback
   
   if (!apiKey) {
-    console.log('[v0] No API key, using local parsing')
     return parseActionLocal(text)
   }
 
@@ -70,10 +78,12 @@ Extract the action into JSON format / 将操作提取为JSON格式:
   "description": "Detailed description / 详细描述",
   
   // For calendar events / 日历事件:
+  "calendarOperation": "add" | "modify" | "delete" | "list",
   "eventDate": "YYYY-MM-DD format / 日期格式",
   "eventTime": "HH:MM (24h format) / 开始时间",
   "eventEndTime": "HH:MM (24h format, optional) / 结束时间",
   "eventLocation": "Location if mentioned / 地点",
+  "eventName": "Name of existing event to modify/delete / 要修改/删除的现有事件名称",
   
   // For reminders / 提醒:
   "reminderTime": "ISO datetime or relative like 'in 30 minutes' / 提醒时间",
@@ -87,8 +97,10 @@ Extract the action into JSON format / 将操作提取为JSON格式:
 }
 
 IMPORTANT / 重要:
-- For dates, convert relative terms (today, tomorrow, next Monday) to actual YYYY-MM-DD.
-- 对于日期，将相对术语（今天、明天、下周一）转换为实际的YYYY-MM-DD。
+- For calendar: detect if user wants to ADD new event, MODIFY existing event, DELETE event, or LIST events.
+- 对于日历：检测用户是想添加新事件、修改现有事件、删除事件还是列出事件。
+- For dates, convert relative terms (today, tomorrow, next Monday) to actual YYYY-MM-DD using today = ${new Date().toISOString().split('T')[0]}.
+- 对于日期，将相对术语（今天、明天、下周一）转换为实际的YYYY-MM-DD，今天 = ${new Date().toISOString().split('T')[0]}。
 - Detect the language and respond in the SAME language for title and description.
 - 检测语言并用相同语言回复标题和描述。
 - Only include fields relevant to the detected category.
@@ -98,7 +110,6 @@ IMPORTANT / 重要:
 
   try {
     const providerInfo = getProviderInfo(provider)
-    console.log('[v0] Calling LLM for action parsing:', providerInfo.chatEndpoint)
     
     const response = await fetch(providerInfo.chatEndpoint, {
       method: 'POST',
@@ -121,13 +132,11 @@ IMPORTANT / 重要:
     })
 
     if (!response.ok) {
-      console.log('[v0] LLM request failed:', response.status)
       throw new Error(`HTTP ${response.status}`)
     }
 
     const data = await response.json() as LLMResponse
     const content = data.choices?.[0]?.message?.content || ''
-    console.log('[v0] LLM response:', content.slice(0, 200))
     
     // Parse JSON from response
     const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || 
@@ -135,8 +144,6 @@ IMPORTANT / 重要:
                      [null, content]
     const jsonStr = (jsonMatch[1] || content).trim()
     const parsed = JSON.parse(jsonStr)
-    
-    console.log('[v0] Parsed action:', parsed)
     
     return {
       id: `action_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -146,6 +153,7 @@ IMPORTANT / 重要:
       originalText: text,
       timestamp: Date.now(),
       status: 'pending',
+      calendarOperation: parsed.calendarOperation || 'add',
       eventDate: parsed.eventDate,
       eventTime: parsed.eventTime,
       eventEndTime: parsed.eventEndTime,
@@ -155,8 +163,7 @@ IMPORTANT / 重要:
       taskDueDate: parsed.taskDueDate,
       timerDuration: parsed.timerDuration
     }
-  } catch (error) {
-    console.log('[v0] Action parsing error, falling back to local:', error)
+  } catch {
     return parseActionLocal(text)
   }
 }
@@ -167,6 +174,7 @@ IMPORTANT / 重要:
 function parseActionLocal(text: string): ParsedAction {
   const lower = text.toLowerCase()
   let category: ActionCategory = 'unknown'
+  let calendarOperation: CalendarOperation = 'add'
   
   // Detect category from keywords
   const calendarKeywords = ['calendar', 'event', 'meeting', 'appointment', 'schedule', 'dinner', 'party', 'conference',
@@ -178,10 +186,23 @@ function parseActionLocal(text: string): ParsedAction {
   const timerKeywords = ['timer', 'countdown', 'set timer', 'minutes from now', 'hours from now',
     '计时', '倒计时', '分钟后', '小时后']
   
+  // Calendar operation keywords
+  const deleteKeywords = ['delete', 'remove', 'cancel', '删除', '取消', '移除']
+  const modifyKeywords = ['modify', 'change', 'update', 'reschedule', 'move', '修改', '更改', '调整', '改到']
+  const listKeywords = ['list', 'show', 'what', 'my events', 'upcoming', '列出', '显示', '有什么', '我的日程']
+  
   if (timerKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
     category = 'timer'
   } else if (calendarKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
     category = 'calendar'
+    // Detect calendar operation
+    if (deleteKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
+      calendarOperation = 'delete'
+    } else if (modifyKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
+      calendarOperation = 'modify'
+    } else if (listKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
+      calendarOperation = 'list'
+    }
   } else if (reminderKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
     category = 'reminder'
   } else if (taskKeywords.some(kw => lower.includes(kw) || text.includes(kw))) {
@@ -212,6 +233,7 @@ function parseActionLocal(text: string): ParsedAction {
     originalText: text,
     timestamp: Date.now(),
     status: 'pending',
+    calendarOperation,
     eventTime: timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2] || '00'}` : undefined,
     eventDate,
     timerDuration: durationMatch ? parseInt(durationMatch[1]) * (durationMatch[2].toLowerCase().includes('hour') || durationMatch[2].includes('小时') ? 60 : 1) : undefined
@@ -222,7 +244,6 @@ function parseActionLocal(text: string): ParsedAction {
  * Execute an action - REAL IMPLEMENTATIONS
  */
 export async function executeAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
-  console.log('[v0] executeAction called:', action.category, action.title)
   
   switch (action.category) {
     case 'calendar':
@@ -246,69 +267,138 @@ export async function executeAction(action: ParsedAction): Promise<{ success: bo
 }
 
 /**
- * CALENDAR: Generate and download ICS file
- * Works with: Google Calendar, Apple Calendar, Outlook, etc.
+ * CALENDAR: Add/Modify/Delete/List events
+ * Uses Google Calendar, Outlook, or ICS fallback
  */
 async function executeCalendarAction(action: ParsedAction): Promise<{ success: boolean; message: string; data?: unknown }> {
-  console.log('[v0] Executing calendar action - generating ICS file')
+  const operation = action.calendarOperation || 'add'
+  const config = loadCalendarConfig()
+  const provider = config?.provider || 'ics'
+  
+  console.log('[v0] Executing calendar action:', operation, 'via', provider)
+  
+  // Check if provider is connected (for non-ICS operations that need it)
+  if (provider !== 'ics' && (operation === 'modify' || operation === 'delete' || operation === 'list')) {
+    if (!isProviderConnected(provider)) {
+      return {
+        success: false,
+        message: `${provider === 'google' ? 'Google' : 'Outlook'} Calendar not connected. Please connect in Settings to ${operation} events.`
+      }
+    }
+  }
   
   try {
-    // Parse date and time
+    // Build CalendarEvent from ParsedAction
     const eventDate = action.eventDate || new Date().toISOString().split('T')[0]
     const startTime = action.eventTime || '09:00'
-    const endTime = action.eventEndTime || calculateEndTime(startTime, 60) // Default 1 hour
+    const endTime = action.eventEndTime || calculateEndTime(startTime, 60)
     
-    // Create datetime strings
-    const startDateTime = new Date(`${eventDate}T${startTime}:00`)
-    const endDateTime = new Date(`${eventDate}T${endTime}:00`)
-    
-    // Format for ICS (YYYYMMDDTHHMMSS)
-    const formatICSDate = (date: Date) => {
-      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const calendarEvent: CalendarEvent = {
+      id: action.calendarEventId,
+      title: action.title,
+      description: action.description,
+      location: action.eventLocation,
+      startDate: `${eventDate}T${startTime}:00`,
+      endDate: `${eventDate}T${endTime}:00`
     }
     
-    // Generate ICS content
-    const icsContent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//VoiceAgent//Calendar Event//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${action.id}@voiceagent`,
-      `DTSTAMP:${formatICSDate(new Date())}`,
-      `DTSTART:${formatICSDate(startDateTime)}`,
-      `DTEND:${formatICSDate(endDateTime)}`,
-      `SUMMARY:${escapeICSText(action.title)}`,
-      `DESCRIPTION:${escapeICSText(action.description)}`,
-      action.eventLocation ? `LOCATION:${escapeICSText(action.eventLocation)}` : '',
-      'END:VEVENT',
-      'END:VCALENDAR'
-    ].filter(Boolean).join('\r\n')
-    
-    // Create and download file
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${action.title.replace(/[^a-zA-Z0-9]/g, '_')}.ics`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    
-    console.log('[v0] ICS file downloaded successfully')
-    
-    return {
-      success: true,
-      message: `Calendar event "${action.title}" downloaded as .ics file. Open it to add to your calendar app (Google Calendar, Apple Calendar, Outlook, etc.).`,
-      data: { filename: link.download, date: eventDate, time: startTime }
+    switch (operation) {
+      case 'add':
+        const addResult = await addCalendarEvent(calendarEvent)
+        return {
+          success: addResult.success,
+          message: addResult.message,
+          data: { eventId: addResult.eventId, ...calendarEvent }
+        }
+      
+      case 'modify':
+        if (!action.calendarEventId) {
+          // Try to find the event first
+          const listResult = await listCalendarEvents(20)
+          if (listResult.success && listResult.events) {
+            const matchingEvent = listResult.events.find(e => 
+              e.title.toLowerCase().includes(action.title.toLowerCase()) ||
+              action.title.toLowerCase().includes(e.title.toLowerCase())
+            )
+            if (matchingEvent?.id) {
+              const updateResult = await updateCalendarEvent(matchingEvent.id, calendarEvent)
+              return {
+                success: updateResult.success,
+                message: updateResult.message,
+                data: calendarEvent
+              }
+            }
+          }
+          return {
+            success: false,
+            message: `Could not find event "${action.title}" to modify. Please be more specific or connect your calendar.`
+          }
+        }
+        const modifyResult = await updateCalendarEvent(action.calendarEventId, calendarEvent)
+        return {
+          success: modifyResult.success,
+          message: modifyResult.message,
+          data: calendarEvent
+        }
+      
+      case 'delete':
+        if (!action.calendarEventId) {
+          // Try to find the event first
+          const listResult = await listCalendarEvents(20)
+          if (listResult.success && listResult.events) {
+            const matchingEvent = listResult.events.find(e => 
+              e.title.toLowerCase().includes(action.title.toLowerCase()) ||
+              action.title.toLowerCase().includes(e.title.toLowerCase())
+            )
+            if (matchingEvent?.id) {
+              const deleteResult = await deleteCalendarEvent(matchingEvent.id)
+              return {
+                success: deleteResult.success,
+                message: deleteResult.message
+              }
+            }
+          }
+          return {
+            success: false,
+            message: `Could not find event "${action.title}" to delete. Please connect Google or Outlook calendar.`
+          }
+        }
+        const deleteResult = await deleteCalendarEvent(action.calendarEventId)
+        return {
+          success: deleteResult.success,
+          message: deleteResult.message
+        }
+      
+      case 'list':
+        const listResult = await listCalendarEvents(10)
+        if (listResult.success && listResult.events) {
+          const eventList = listResult.events.map(e => 
+            `- ${e.title} (${new Date(e.startDate).toLocaleDateString()})`
+          ).join('\n')
+          return {
+            success: true,
+            message: listResult.events.length > 0 
+              ? `Upcoming events:\n${eventList}`
+              : 'No upcoming events found.',
+            data: listResult.events
+          }
+        }
+        return {
+          success: false,
+          message: listResult.message || 'Failed to list events'
+        }
+      
+      default:
+        return {
+          success: false,
+          message: `Unknown calendar operation: ${operation}`
+        }
     }
   } catch (error) {
     console.log('[v0] Calendar action failed:', error)
     return {
       success: false,
-      message: `Failed to create calendar event: ${error instanceof Error ? error.message : 'Unknown error'}`
+      message: `Calendar operation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     }
   }
 }
