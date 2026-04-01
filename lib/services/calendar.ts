@@ -552,6 +552,7 @@ export async function listOutlookEvents(maxResults: number = 10): Promise<{ succ
  * Generate and download ICS file
  */
 export function downloadICSEvent(event: CalendarEvent): { success: boolean; message: string } {
+  console.log('[v0] downloadICSEvent called for:', event.title)
   try {
     const formatICSDate = (dateStr: string, allDay?: boolean) => {
       const date = new Date(dateStr)
@@ -596,6 +597,7 @@ export function downloadICSEvent(event: CalendarEvent): { success: boolean; mess
     const link = document.createElement('a')
     link.href = url
     link.download = `${event.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.ics`
+    console.log('[v0] Triggering download for:', link.download)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -623,6 +625,7 @@ export function downloadICSEvent(event: CalendarEvent): { success: boolean; mess
 export async function addCalendarEvent(event: CalendarEvent, provider?: CalendarProvider): Promise<{ success: boolean; message: string; eventId?: string }> {
   const config = loadCalendarConfig()
   const useProvider = provider || config?.provider || 'ics'
+  console.log('[v0] addCalendarEvent called with provider:', useProvider)
   
   switch (useProvider) {
     case 'google':
