@@ -212,6 +212,7 @@ export function VoiceAgent() {
         // Action flow — parse and show preview for confirmation
         store.setLoadingState('parsing-action')
         store.addLog('Parsing action from speech...', 'info')
+        console.log('[v0] ACTION MODE - parsing action')
         
         const intentKey = getKeyForFunction('intent')
         const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
@@ -222,9 +223,11 @@ export function VoiceAgent() {
           intentAssignment?.model
         )
         
+        console.log('[v0] ACTION MODE - parsed action:', parsedAction)
         store.setCurrentAction(parsedAction)
         store.addLog(`Action parsed: ${parsedAction.category} - ${parsedAction.title}`, 'success')
         store.setLoadingState('complete')
+        console.log('[v0] ACTION MODE - loading state set to complete')
       } else if (intent === 'note') {
         // Note flow — save the verbatim transcript, no summarisation
         store.setLoadingState('saving-note')
@@ -465,6 +468,12 @@ export function VoiceAgent() {
   const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
   const showNoteResult = store.intent === 'note' && store.currentNote && store.loadingState === 'complete'
   const showActionResult = store.intent === 'action' && store.currentAction && ['complete', 'executing-action'].includes(store.loadingState)
+  console.log('[v0] showActionResult computed:', { 
+    intent: store.intent, 
+    hasCurrentAction: !!store.currentAction, 
+    loadingState: store.loadingState,
+    showActionResult 
+  })
 
   const templateData: TemplateData = {
     topic: store.transcript,
