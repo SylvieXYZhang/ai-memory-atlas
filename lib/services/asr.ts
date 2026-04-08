@@ -54,7 +54,15 @@ export async function transcribeAudio(
 async function transcribeDashScope(audioBlob: Blob, apiKey: string, model: string): Promise<string> {
   const providerInfo = getProviderInfo('dashscope')
   const base64Audio = await blobToBase64(audioBlob)
+  
+  // Determine audio format from blob type
+  const mimeType = audioBlob.type || 'audio/webm'
+  const format = mimeType.includes('webm') ? 'webm' : 
+                 mimeType.includes('mp3') ? 'mp3' :
+                 mimeType.includes('wav') ? 'wav' :
+                 mimeType.includes('ogg') ? 'ogg' : 'webm'
 
+  // DashScope expects just the raw base64 data without data URL prefix
   const payload = {
     model,
     messages: [
@@ -64,16 +72,13 @@ async function transcribeDashScope(audioBlob: Blob, apiKey: string, model: strin
           {
             type: 'input_audio',
             input_audio: {
-              data: base64Audio
+              data: base64Audio,
+              format: format
             }
           }
         ]
       }
-    ],
-    asr_options: {
-      enable_itn: true,
-      hot_words: HOT_WORDS.join(',')
-    }
+    ]
   }
 
   const response = await fetch(providerInfo.chatEndpoint, {
