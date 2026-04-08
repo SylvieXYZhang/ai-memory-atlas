@@ -567,9 +567,8 @@ export function VoiceAgent() {
             <h2 className="text-3xl font-bold text-balance">
               Your Voice, Your Research
             </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto text-pretty">
-              Speak freely. In Publish Mode the AI researches and drafts content. 
-              In Note Mode your exact words are saved and automatically linked to semantically related ideas.
+            <p className="text-muted-foreground text-sm max-w-2xl mx-auto text-pretty">
+              Speak freely. In Publish Mode the AI researches and drafts content. In Note Mode your exact words are saved and automatically linked to semantically related ideas.
             </p>
           </div>
 
