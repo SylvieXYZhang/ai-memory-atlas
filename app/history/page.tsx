@@ -10,7 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import type { NoteRecord, PublishRecord, ActionHistoryItem } from '@/lib/types'
-import { getNotes } from '@/lib/services/notes'
+import { getNotes } from '@/lib/services/storage'
 
 const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
 const ACTION_HISTORY_KEY = 'voice_agent_action_history'
@@ -74,7 +74,7 @@ export default function HistoryPage() {
   useEffect(() => {
     // Load notes
     setNotes(getNotes())
-    
+
     // Load publish history
     const savedPublish = localStorage.getItem(PUBLISH_HISTORY_KEY)
     if (savedPublish) {
@@ -84,7 +84,7 @@ export default function HistoryPage() {
         // Ignore parse errors
       }
     }
-    
+
     // Load action history
     const savedActions = localStorage.getItem(ACTION_HISTORY_KEY)
     if (savedActions) {
@@ -303,7 +303,7 @@ export default function HistoryPage() {
                         const Icon = actionCategoryIcons[item.action.category] || Zap
                         const colorClass = actionCategoryColors[item.action.category] || actionCategoryColors.unknown
                         const statusClass = statusColors[item.action.status] || statusColors.pending
-                        
+
                         return (
                           <Card key={item.action.id} className={cn("border transition-colors", colorClass.split(' ')[2])}>
                             <CardContent className="px-4 py-3">
