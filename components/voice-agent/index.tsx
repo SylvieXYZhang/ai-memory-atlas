@@ -288,6 +288,8 @@ export function VoiceAgent() {
         store.setLoadingState('complete')
       }
     } catch (error) {
+      console.log('[v0] processAudio CAUGHT ERROR:', error)
+      console.error('[v0] Full error stack:', error instanceof Error ? error.stack : String(error))
       const message = error instanceof Error ? error.message : 'Unknown error'
       store.addLog(`Error: ${message}`, 'error')
       store.setLoadingState('error')
