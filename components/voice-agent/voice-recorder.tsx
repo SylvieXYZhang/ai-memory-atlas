@@ -142,7 +142,10 @@ export function VoiceRecorder({
   }, [])
 
   const stopRecording = useCallback(() => {
+    console.log('[v0] VoiceRecorder stopRecording called')
+    console.log('[v0] mediaRecorder state:', mediaRecorderRef.current?.state)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      console.log('[v0] Calling mediaRecorder.stop()')
       mediaRecorderRef.current.stop()
     }
     if (streamRef.current) {
@@ -197,8 +200,11 @@ export function VoiceRecorder({
       }
 
       mediaRecorder.onstop = () => {
+        console.log('[v0] VoiceRecorder mediaRecorder.onstop triggered')
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType })
+        console.log('[v0] VoiceRecorder created audioBlob, size:', audioBlob.size)
         onStopRecording(audioBlob)
+        console.log('[v0] VoiceRecorder called onStopRecording')
       }
 
       mediaRecorder.onerror = (event) => {
@@ -209,8 +215,10 @@ export function VoiceRecorder({
       }
 
       // Start recording with timeslice to get data periodically
+      console.log('[v0] VoiceRecorder starting mediaRecorder')
       mediaRecorder.start(1000)
       onStartRecording()
+      console.log('[v0] VoiceRecorder recording started')
       
       // Start real-time speech recognition
       startSpeechRecognition()
