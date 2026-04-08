@@ -183,29 +183,38 @@ export function VoiceAgent() {
       const forcedMode = store.forcedMode
       console.log('[v0] forcedMode from store:', forcedMode)
       console.log('[v0] transcript:', transcript)
+      console.log('[v0] store.intent current:', store.intent)
+      
       if (forcedMode === 'note') {
         intent = 'note'
         store.addLog('Mode: Note (manual)', 'info')
+        console.log('[v0] Using forced Note mode')
       } else if (forcedMode === 'publish') {
         intent = 'publish'
         store.addLog('Mode: Publish (manual)', 'info')
+        console.log('[v0] Using forced Publish mode')
       } else if (forcedMode === 'action') {
         intent = 'action'
         store.addLog('Mode: Action (manual)', 'info')
+        console.log('[v0] Using forced Action mode')
       } else {
+        console.log('[v0] No forced mode, detecting intent automatically')
         store.setLoadingState('analyzing')
         store.addLog('Detecting intent automatically...', 'info')
         const intentKey = getKeyForFunction('intent')
         const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
+        console.log('[v0] Calling detectIntent with key:', !!intentKey, 'assignment:', intentAssignment)
         const detected = await detectIntent(
           transcript, 
           intentKey,
           intentAssignment?.provider,
           intentAssignment?.model
         )
+        console.log('[v0] detectIntent returned:', detected)
         intent = detected === 'action' ? 'action' : detected === 'note' ? 'note' : 'publish'
         store.addLog(`Intent detected: ${intent}`, 'success')
       }
+      console.log('[v0] Final intent determined:', intent)
       store.setIntent(intent)
 
       if (intent === 'action') {
