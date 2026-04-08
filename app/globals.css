@@ -46,6 +46,8 @@
   --note-foreground: oklch(0.098 0 0);
   --related: oklch(0.627 0.265 303.9);
   --related-foreground: oklch(0.985 0 0);
+  --action: oklch(0.7 0.18 250);
+  --action-foreground: oklch(0.985 0 0);
 }
 
 .dark {

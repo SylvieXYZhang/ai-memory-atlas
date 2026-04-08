@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useCallback, useState } from 'react'
-import { Settings, Volume2, FileText, Lightbulb, FlaskConical, Zap } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { Settings, Volume2, FileText, Lightbulb, FlaskConical, Zap, History } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { VoiceRecorder } from './voice-recorder'
 import { DebugPanel } from './debug-panel'
@@ -33,6 +34,7 @@ import {
 } from '@/lib/api-config'
 
 const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
+const ACTION_HISTORY_KEY = 'voice_agent_action_history'
 
 const BUFFER_TIME_MS = 2000 // 2 seconds buffer before processing
 
@@ -59,6 +61,19 @@ export function VoiceAgent() {
       if (saved) {
         try {
           store.setPublishHistory(JSON.parse(saved))
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // Load action history
+      const savedActions = localStorage.getItem(ACTION_HISTORY_KEY)
+      if (savedActions) {
+        try {
+          const actions = JSON.parse(savedActions)
+          actions.forEach((item: { action: unknown; executedAt?: number }) => {
+            store.addActionToHistory(item as { action: typeof store.currentAction; executedAt?: number })
+          })
         } catch {
           // Ignore parse errors
         }
@@ -368,7 +383,11 @@ export function VoiceAgent() {
       
       if (result.success) {
         store.updateActionStatus(store.currentAction.id, 'executed', result.message)
-        store.addActionToHistory({ action: store.currentAction, executedAt: Date.now() })
+        const historyItem = { action: { ...store.currentAction, status: 'executed' as const, executionResult: result.message }, executedAt: Date.now() }
+        store.addActionToHistory(historyItem)
+        // Persist action history
+        const currentHistory = JSON.parse(localStorage.getItem(ACTION_HISTORY_KEY) || '[]')
+        localStorage.setItem(ACTION_HISTORY_KEY, JSON.stringify([historyItem, ...currentHistory].slice(0, 30)))
         store.addLog(result.message, 'success')
       } else {
         store.updateActionStatus(store.currentAction.id, 'failed', undefined, result.message)
@@ -535,6 +554,12 @@ export function VoiceAgent() {
               <FlaskConical className="w-4 h-4" />
               <span className="hidden sm:inline">Load Demo Notes</span>
             </Button>
+
+            <Link href="/history">
+              <Button variant="outline" size="icon" title="View History">
+                <History className="w-4 h-4" />
+              </Button>
+            </Link>
 
             <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
               <DialogTrigger asChild>
