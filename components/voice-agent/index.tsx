@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useCallback, useState } from 'react'
-import { Settings, Volume2, FileText, Lightbulb, FlaskConical } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { Settings, Volume2, FileText, Lightbulb, FlaskConical, Zap, History } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { VoiceRecorder } from './voice-recorder'
 import { DebugPanel } from './debug-panel'
@@ -10,6 +11,7 @@ import { NoteDisplay } from './note-display'
 import { HistoryPanel } from './history-panel'
 import { MagicButton } from './magic-button'
 import { SettingsPortal } from './settings-portal'
+import { ActionPreview } from './action-preview'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -19,6 +21,8 @@ import { transcribeAudio, mockTranscribeAudio } from '@/lib/services/asr'
 import { detectIntent, generateSummary, performDeepResearch } from '@/lib/services/llm'
 import { searchSimilarNotes } from '@/lib/services/vector-search'
 import { getNotes, saveNote, seedDemoNotes } from '@/lib/services/storage'
+import { parseAction, executeAction } from '@/lib/services/actions'
+import { handleGoogleCallback, handleOutlookCallback } from '@/lib/services/calendar'
 import type { TemplateData, PublishRecord } from '@/lib/types'
 import { 
   type UserAPIConfig, 
@@ -30,13 +34,20 @@ import {
 } from '@/lib/api-config'
 
 const PUBLISH_HISTORY_KEY = 'voiceagent_publish_history'
+const ACTION_HISTORY_KEY = 'voice_agent_action_history'
+
+const BUFFER_TIME_MS = 2000 // 2 seconds buffer before processing
 
 export function VoiceAgent() {
   const store = useAppStore()
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const bufferTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const pendingAudioRef = useRef<Blob | null>(null)
   const [apiConfig, setApiConfig] = useState<UserAPIConfig | null>(null)
   const [isPublishingNote, setIsPublishingNote] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [bufferCountdown, setBufferCountdown] = useState<number | null>(null)
+  const [isExecutingAction, setIsExecutingAction] = useState(false)
 
   // Load API config and notes on mount
   useEffect(() => {
@@ -50,8 +61,32 @@ export function VoiceAgent() {
       if (saved) {
         try {
           store.setPublishHistory(JSON.parse(saved))
-        } catch (error) {
-          console.error('[v0] Error loading publish history:', error)
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // Load action history
+      const savedActions = localStorage.getItem(ACTION_HISTORY_KEY)
+      if (savedActions) {
+        try {
+          const actions = JSON.parse(savedActions)
+          actions.forEach((item: { action: unknown; executedAt?: number }) => {
+            store.addActionToHistory(item as { action: typeof store.currentAction; executedAt?: number })
+          })
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // Handle OAuth callbacks from calendar integrations
+      if (window.location.hash.includes('access_token')) {
+        const googleToken = handleGoogleCallback()
+        const outlookToken = handleOutlookCallback()
+        if (googleToken || outlookToken) {
+          store.addLog(`Calendar connected: ${googleToken ? 'Google' : 'Outlook'}`, 'success')
+          // Open settings to show connection status
+          setSettingsOpen(true)
         }
       }
     }
@@ -84,53 +119,153 @@ export function VoiceAgent() {
     return getAPIKey(apiConfig, assignment.provider)
   }, [apiConfig])
 
+  // Cancel any pending buffer timer
+  const cancelBuffer = useCallback(() => {
+    if (bufferTimerRef.current) {
+      clearTimeout(bufferTimerRef.current)
+      bufferTimerRef.current = null
+    }
+    setBufferCountdown(null)
+    pendingAudioRef.current = null
+  }, [])
+
   const handleStartRecording = useCallback(() => {
+    // Cancel any pending buffer - user wants to continue/modify input
+    if (bufferTimerRef.current) {
+      cancelBuffer()
+      store.addLog('Buffer cancelled - continuing input', 'info')
+      // Don't reset, keep existing realtime transcript to append to
+      store.setIsRecording(true)
+      store.setLoadingState('recording')
+      return
+    }
+    
+    // If there's an existing transcript, push it to history before resetting
+    if (store.transcript && store.transcript.trim()) {
+      store.addTranscriptToHistory({
+        id: `hist_${Date.now()}`,
+        text: store.transcript,
+        timestamp: Date.now(),
+        intent: store.intent
+      })
+    }
+    
     store.reset()
     store.setIsRecording(true)
     store.setLoadingState('recording')
     store.addLog('Recording started', 'info')
-  }, [])
+  }, [store.transcript, store.intent, cancelBuffer])
 
-  const handleStopRecording = useCallback(async (audioBlob: Blob) => {
-    store.setIsRecording(false)
+  // Process the audio after buffer expires
+  const processAudio = useCallback(async (audioBlob: Blob) => {
     store.setLoadingState('transcribing')
-    store.addLog(`Recording stopped (${store.recordingTime}s)`, 'info')
     store.addLog('Starting transcription...', 'info')
+    
+    // Check if we have realtime transcript to use
+    const realtimeText = store.realtimeTranscript
+    console.log('[v0] Realtime transcript available:', realtimeText)
 
     try {
       // Transcribe audio
       let transcript: string
       const asrKey = getKeyForFunction('asr')
-      if (asrKey) {
-        transcript = await transcribeAudio(audioBlob, asrKey)
+      const asrAssignment = apiConfig ? getAssignment(apiConfig, 'asr') : null
+      
+      // If we have realtime transcript and no ASR key, use realtime transcript
+      if (!asrKey && realtimeText && realtimeText.trim()) {
+        console.log('[v0] Using realtime transcript instead of ASR')
+        transcript = realtimeText
+      } else if (asrKey && asrAssignment) {
+        console.log('[v0] Using ASR service:', asrAssignment.provider)
+        try {
+          transcript = await transcribeAudio(audioBlob, asrKey, asrAssignment.provider, asrAssignment.model)
+          console.log('[v0] ASR transcription successful')
+        } catch (asrError) {
+          console.log('[v0] ASR failed, falling back to realtime:', asrError)
+          store.addLog(`ASR failed: ${asrError instanceof Error ? asrError.message : 'Unknown'}. Using realtime transcript.`, 'warning')
+          // Fall back to realtime transcript if available
+          if (realtimeText && realtimeText.trim()) {
+            transcript = realtimeText
+            console.log('[v0] Using realtime transcript as fallback')
+          } else {
+            throw asrError // Re-throw if no fallback available
+          }
+        }
       } else {
-        store.addLog('No ASR API key - using demo mode', 'warning')
-        transcript = await mockTranscribeAudio(store.recordingTime * 1000)
+        // No ASR key and no realtime transcript - check realtime again or use mock
+        if (realtimeText && realtimeText.trim()) {
+          console.log('[v0] Fallback to realtime transcript')
+          transcript = realtimeText
+        } else {
+          store.addLog('No ASR API key - using demo mode', 'warning')
+          transcript = await mockTranscribeAudio(store.recordingTime * 1000)
+        }
       }
       
+      console.log('[v0] Final transcript:', transcript)
       store.setTranscript(transcript)
       store.addLog(`Transcription complete: "${transcript.slice(0, 50)}..."`, 'success')
 
       // Resolve intent — respect manual override, fall back to AI detection
-      let intent: 'note' | 'publish'
+      let intent: 'note' | 'publish' | 'action'
       const forcedMode = store.forcedMode
+      console.log('[v0] forcedMode from store:', forcedMode)
+      console.log('[v0] transcript:', transcript)
+      console.log('[v0] store.intent current:', store.intent)
+      
       if (forcedMode === 'note') {
         intent = 'note'
         store.addLog('Mode: Note (manual)', 'info')
+        console.log('[v0] Using forced Note mode')
       } else if (forcedMode === 'publish') {
         intent = 'publish'
         store.addLog('Mode: Publish (manual)', 'info')
+        console.log('[v0] Using forced Publish mode')
+      } else if (forcedMode === 'action') {
+        intent = 'action'
+        store.addLog('Mode: Action (manual)', 'info')
+        console.log('[v0] Using forced Action mode')
       } else {
+        console.log('[v0] No forced mode, detecting intent automatically')
         store.setLoadingState('analyzing')
         store.addLog('Detecting intent automatically...', 'info')
         const intentKey = getKeyForFunction('intent')
-        const detected = await detectIntent(transcript, intentKey)
-        intent = detected === 'note' ? 'note' : 'publish'
+        const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
+        console.log('[v0] Calling detectIntent with key:', !!intentKey, 'assignment:', intentAssignment)
+        const detected = await detectIntent(
+          transcript, 
+          intentKey,
+          intentAssignment?.provider,
+          intentAssignment?.model
+        )
+        console.log('[v0] detectIntent returned:', detected)
+        intent = detected === 'action' ? 'action' : detected === 'note' ? 'note' : 'publish'
         store.addLog(`Intent detected: ${intent}`, 'success')
       }
+      console.log('[v0] Final intent determined:', intent)
       store.setIntent(intent)
 
-      if (intent === 'note') {
+      if (intent === 'action') {
+        // Action flow — parse and show preview for confirmation
+        store.setLoadingState('parsing-action')
+        store.addLog('Parsing action from speech...', 'info')
+        console.log('[v0] ACTION MODE - parsing action')
+        
+        const intentKey = getKeyForFunction('intent')
+        const intentAssignment = apiConfig ? getAssignment(apiConfig, 'intent') : null
+        const parsedAction = await parseAction(
+          transcript,
+          intentKey,
+          intentAssignment?.provider,
+          intentAssignment?.model
+        )
+        
+        console.log('[v0] ACTION MODE - parsed action:', parsedAction)
+        store.setCurrentAction(parsedAction)
+        store.addLog(`Action parsed: ${parsedAction.category} - ${parsedAction.title}`, 'success')
+        store.setLoadingState('complete')
+        console.log('[v0] ACTION MODE - loading state set to complete')
+      } else if (intent === 'note') {
         // Note flow — save the verbatim transcript, no summarisation
         store.setLoadingState('saving-note')
         store.addLog('Saving verbatim note...', 'info')
@@ -155,7 +290,13 @@ export function VoiceAgent() {
         store.addLog('Generating quick summary...', 'info')
         
         const summaryKey = getKeyForFunction('summary')
-        const summary = await generateSummary(transcript, summaryKey)
+        const summaryAssignment = apiConfig ? getAssignment(apiConfig, 'summary') : null
+        const summary = await generateSummary(
+          transcript, 
+          summaryKey,
+          summaryAssignment?.provider,
+          summaryAssignment?.model
+        )
         store.setSummary(summary)
         store.addLog('Summary generated', 'success')
         
@@ -175,11 +316,103 @@ export function VoiceAgent() {
         store.setLoadingState('complete')
       }
     } catch (error) {
+      console.log('[v0] processAudio CAUGHT ERROR:', error)
+      console.error('[v0] Full error stack:', error instanceof Error ? error.stack : String(error))
       const message = error instanceof Error ? error.message : 'Unknown error'
       store.addLog(`Error: ${message}`, 'error')
       store.setLoadingState('error')
     }
-  }, [store.recordingTime])
+  }, [store.recordingTime, apiConfig, getKeyForFunction])
+
+  const handleStopRecording = useCallback((audioBlob: Blob) => {
+    console.log('[v0] handleStopRecording called, blob size:', audioBlob.size)
+    store.setIsRecording(false)
+    store.addLog(`Recording stopped (${store.recordingTime}s)`, 'info')
+    
+    // Store the audio blob for processing
+    pendingAudioRef.current = audioBlob
+    
+    // Start buffer countdown
+    store.setLoadingState('idle')
+    store.addLog('Buffer started - click mic again within 2s to continue recording', 'info')
+    setBufferCountdown(2)
+    
+    // Countdown interval
+    const countdownInterval = setInterval(() => {
+      setBufferCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+    
+    // Set buffer timer to process after 2 seconds
+    bufferTimerRef.current = setTimeout(() => {
+      console.log('[v0] Buffer expired, processing audio')
+      clearInterval(countdownInterval)
+      setBufferCountdown(null)
+      
+      if (pendingAudioRef.current) {
+        console.log('[v0] Calling processAudio with blob')
+        store.addLog('Buffer expired - processing audio', 'info')
+        processAudio(pendingAudioRef.current)
+        pendingAudioRef.current = null
+      } else {
+        console.log('[v0] No pending audio to process')
+      }
+      bufferTimerRef.current = null
+    }, BUFFER_TIME_MS)
+  }, [store.recordingTime, processAudio])
+
+  // Action handlers
+  const handleConfirmAction = useCallback(async () => {
+    if (!store.currentAction) return
+    
+    console.log('[v0] handleConfirmAction called with action:', store.currentAction)
+    setIsExecutingAction(true)
+    store.setLoadingState('executing-action')
+    store.updateActionStatus(store.currentAction.id, 'confirmed')
+    store.addLog(`Executing action: ${store.currentAction.title}...`, 'info')
+    
+    try {
+      console.log('[v0] Calling executeAction...')
+      const result = await executeAction(store.currentAction)
+      console.log('[v0] executeAction result:', result)
+      
+      if (result.success) {
+        store.updateActionStatus(store.currentAction.id, 'executed', result.message)
+        const historyItem = { action: { ...store.currentAction, status: 'executed' as const, executionResult: result.message }, executedAt: Date.now() }
+        store.addActionToHistory(historyItem)
+        // Persist action history
+        const currentHistory = JSON.parse(localStorage.getItem(ACTION_HISTORY_KEY) || '[]')
+        localStorage.setItem(ACTION_HISTORY_KEY, JSON.stringify([historyItem, ...currentHistory].slice(0, 30)))
+        store.addLog(result.message, 'success')
+      } else {
+        store.updateActionStatus(store.currentAction.id, 'failed', undefined, result.message)
+        store.addLog(`Action failed: ${result.message}`, 'error')
+      }
+      
+      store.setLoadingState('complete')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      store.updateActionStatus(store.currentAction.id, 'failed', undefined, message)
+      store.addLog(`Action error: ${message}`, 'error')
+      store.setLoadingState('error')
+    } finally {
+      setIsExecutingAction(false)
+    }
+  }, [store.currentAction])
+
+  const handleCancelAction = useCallback(() => {
+    if (store.currentAction) {
+      store.updateActionStatus(store.currentAction.id, 'cancelled')
+      store.addLog('Action cancelled', 'info')
+    }
+    store.setCurrentAction(null)
+    store.setLoadingState('idle')
+  }, [store.currentAction])
 
   const handleDeepResearch = useCallback(async () => {
     if (!store.transcript) return
@@ -190,7 +423,13 @@ export function VoiceAgent() {
 
     try {
       const researchKey = getKeyForFunction('research')
-      const research = await performDeepResearch(store.transcript, researchKey)
+      const researchAssignment = apiConfig ? getAssignment(apiConfig, 'research') : null
+      const research = await performDeepResearch(
+        store.transcript, 
+        researchKey,
+        researchAssignment?.provider,
+        researchAssignment?.model
+      )
       store.setResearchData(research)
       store.addLog('Deep research complete!', 'success')
       store.setLoadingState('complete')
@@ -236,7 +475,13 @@ export function VoiceAgent() {
     try {
       // Generate summary for the note
       const summaryKey = getKeyForFunction('summary')
-      const summary = await generateSummary(note.text, summaryKey)
+      const summaryAssignment = apiConfig ? getAssignment(apiConfig, 'summary') : null
+      const summary = await generateSummary(
+        note.text, 
+        summaryKey,
+        summaryAssignment?.provider,
+        summaryAssignment?.model
+      )
       
       // Create publish record
       const record: PublishRecord = {
@@ -265,10 +510,18 @@ export function VoiceAgent() {
     }
   }, [store.notes, savePublishRecord])
 
-  const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note'].includes(store.loadingState)
+  const isProcessing = ['transcribing', 'analyzing', 'generating-summary', 'saving-note', 'parsing-action'].includes(store.loadingState)
+  const isInBuffer = bufferCountdown !== null
   const isDeepResearching = store.loadingState === 'deep-research'
   const showPublishResult = store.intent === 'publish' && store.summary && store.loadingState === 'complete'
   const showNoteResult = store.intent === 'note' && store.currentNote && store.loadingState === 'complete'
+  const showActionResult = store.intent === 'action' && store.currentAction && ['complete', 'executing-action'].includes(store.loadingState)
+  console.log('[v0] showActionResult computed:', { 
+    intent: store.intent, 
+    hasCurrentAction: !!store.currentAction, 
+    loadingState: store.loadingState,
+    showActionResult 
+  })
 
   const templateData: TemplateData = {
     topic: store.transcript,
@@ -302,6 +555,12 @@ export function VoiceAgent() {
               <span className="hidden sm:inline">Load Demo Notes</span>
             </Button>
 
+            <Link href="/history">
+              <Button variant="outline" size="icon" title="View History">
+                <History className="w-4 h-4" />
+              </Button>
+            </Link>
+
             <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="icon">
@@ -333,9 +592,8 @@ export function VoiceAgent() {
             <h2 className="text-3xl font-bold text-balance">
               Your Voice, Your Research
             </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto text-pretty">
-              Speak freely. In Publish Mode the AI researches and drafts content. 
-              In Note Mode your exact words are saved and automatically linked to semantically related ideas.
+            <p className="text-muted-foreground text-sm max-w-2xl mx-auto text-pretty">
+              Speak freely. In Publish Mode the AI researches and drafts content. In Note Mode your exact words are saved and automatically linked to semantically related ideas.
             </p>
           </div>
 
@@ -383,13 +641,29 @@ export function VoiceAgent() {
                 <Lightbulb className="w-3.5 h-3.5" />
                 Note
               </button>
+              {/* Action */}
+              <button
+                onClick={() => store.setForcedMode('action')}
+                disabled={store.isRecording || isProcessing}
+                className={cn(
+                  "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed",
+                  store.forcedMode === 'action'
+                    ? "bg-purple-500 text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                Action
+              </button>
             </div>
             <p className="text-xs text-muted-foreground">
               {store.forcedMode === 'auto'
                 ? "AI will detect mode from your speech"
                 : store.forcedMode === 'publish'
                 ? "Every recording will be processed for publishing"
-                : "Every recording will be saved as a verbatim note"}
+                : store.forcedMode === 'note'
+                ? "Every recording will be saved as a verbatim note"
+                : "Every recording will be parsed as an action to execute"}
             </p>
           </div>
 
@@ -398,18 +672,122 @@ export function VoiceAgent() {
             <VoiceRecorder
               isRecording={store.isRecording}
               recordingTime={store.recordingTime}
-              isProcessing={isProcessing}
+              isProcessing={isProcessing && !isInBuffer}
               onStartRecording={handleStartRecording}
               onStopRecording={handleStopRecording}
+              onError={(error) => store.addLog(error, 'error')}
+              onRealtimeTranscript={(text) => store.setRealtimeTranscript(text)}
+              maxDuration={180}
             />
           </div>
+
+          {/* Buffer countdown indicator */}
+          {bufferCountdown !== null && (
+            <div className="p-4 rounded-lg bg-note/10 border border-note/30 transition-all animate-pulse">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-note animate-ping" />
+                  <p className="text-sm font-medium text-note">
+                    Processing in {bufferCountdown}s...
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Click mic to continue recording
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Real-time transcript display */}
+          {(store.isRecording || store.realtimeTranscript) && !store.transcript && (
+            <div className="p-4 rounded-lg bg-secondary/30 border border-border/50 transition-all">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={cn(
+                  "w-2 h-2 rounded-full",
+                  store.isRecording ? "bg-destructive animate-pulse" : "bg-muted"
+                )} />
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                  {store.isRecording ? 'Live Transcription' : 'Preview'}
+                </p>
+              </div>
+              <p className="text-foreground/80 min-h-[1.5rem]">
+                {store.realtimeTranscript || (store.isRecording ? 'Listening...' : '')}
+              </p>
+            </div>
+          )}
 
           {/* Transcript display */}
           {store.transcript && (
             <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-              <p className="text-sm text-muted-foreground mb-1">Transcript:</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-muted-foreground">Current Transcript:</p>
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full",
+                  store.intent === 'publish' 
+                    ? "bg-research/20 text-research" 
+                    : store.intent === 'note'
+                    ? "bg-note/20 text-note"
+                    : store.intent === 'action'
+                    ? "bg-purple-500/20 text-purple-500"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  {store.intent === 'unknown' ? 'Processing' : store.intent}
+                </span>
+              </div>
               <p className="text-foreground">{store.transcript}</p>
             </div>
+          )}
+
+          {/* Transcript history */}
+          {store.transcriptHistory.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">Recent Transcripts:</p>
+                <button 
+                  onClick={() => store.clearTranscriptHistory()}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {store.transcriptHistory.slice(0, 5).map((item) => (
+                  <div 
+                    key={item.id} 
+                    className="p-3 rounded-lg bg-muted/30 border border-border/50 text-sm"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn(
+                        "text-xs px-2 py-0.5 rounded-full",
+                        item.intent === 'publish' 
+                          ? "bg-research/20 text-research" 
+                          : item.intent === 'note'
+                          ? "bg-note/20 text-note"
+                          : item.intent === 'action'
+                          ? "bg-purple-500/20 text-purple-500"
+                          : "bg-muted text-muted-foreground"
+                      )}>
+                        {item.intent === 'unknown' ? 'unknown' : item.intent}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(item.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-foreground/70 line-clamp-2">{item.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action results */}
+          {showActionResult && store.currentAction && (
+            <ActionPreview
+              action={store.currentAction}
+              onConfirm={handleConfirmAction}
+              onCancel={handleCancelAction}
+              isExecuting={isExecutingAction}
+            />
           )}
 
           {/* Publish results */}

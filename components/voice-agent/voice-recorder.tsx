@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useCallback, useState } from 'react'
+import { Mic, MicOff, Loader2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+type PermissionState = 'unknown' | 'granted' | 'denied' | 'prompt'
 
 interface VoiceRecorderProps {
   isRecording: boolean
@@ -11,7 +13,15 @@ interface VoiceRecorderProps {
   isProcessing: boolean
   onStartRecording: () => void
   onStopRecording: (audioBlob: Blob) => void
+  onError?: (error: string) => void
+  onRealtimeTranscript?: (transcript: string) => void
   maxDuration?: number
+}
+
+// Check if Web Speech API is available
+const isSpeechRecognitionSupported = () => {
+  return typeof window !== 'undefined' && 
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 }
 
 export function VoiceRecorder({
@@ -20,23 +30,142 @@ export function VoiceRecorder({
   isProcessing,
   onStartRecording,
   onStopRecording,
-  maxDuration = 5
+  onError,
+  onRealtimeTranscript,
+  maxDuration = 180 // Default to 3 minutes
 }: VoiceRecorderProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null)
+  const [permissionState, setPermissionState] = useState<PermissionState>('unknown')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const interimTranscriptRef = useRef<string>('')
+  const finalTranscriptRef = useRef<string>('')
+
+  // Check microphone permission on mount
+  useEffect(() => {
+    checkMicrophonePermission()
+  }, [])
+
+  const checkMicrophonePermission = async () => {
+    try {
+      // Check if permissions API is available
+      if (navigator.permissions && navigator.permissions.query) {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+        setPermissionState(result.state as PermissionState)
+        
+        // Listen for permission changes
+        result.onchange = () => {
+          setPermissionState(result.state as PermissionState)
+        }
+      } else {
+        // Permissions API not available, try to get stream to check
+        setPermissionState('prompt')
+      }
+    } catch {
+      // Some browsers don't support microphone permission query
+      setPermissionState('prompt')
+    }
+  }
+
+  // Start Web Speech API for real-time transcription
+  const startSpeechRecognition = useCallback(() => {
+    if (!isSpeechRecognitionSupported()) return
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SpeechRecognition()
+    
+    recognition.continuous = true
+    recognition.interimResults = true
+    // For bilingual (English/Chinese) support:
+    // - Chrome: supports multiple languages but requires specific locale
+    // - We default to 'en-US' but the transcript will still capture other languages
+    // - For better Chinese support, user can switch browser language
+    recognition.lang = 'en-US'
+    
+    interimTranscriptRef.current = ''
+    finalTranscriptRef.current = ''
+    
+    recognition.onresult = (event) => {
+      let interim = ''
+      let final = ''
+      
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          final += result[0].transcript + ' '
+        } else {
+          interim += result[0].transcript
+        }
+      }
+      
+      finalTranscriptRef.current = final
+      interimTranscriptRef.current = interim
+      
+      // Emit combined transcript
+      const combined = (final + interim).trim()
+      onRealtimeTranscript?.(combined)
+    }
+    
+    recognition.onerror = (event) => {
+      // Don't treat 'no-speech' or 'aborted' as errors
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        console.error('[v0] Speech recognition error:', event.error)
+      }
+    }
+    
+    recognition.onend = () => {
+      // Restart if still recording (speech recognition can stop on silence)
+      if (mediaRecorderRef.current?.state === 'recording' && speechRecognitionRef.current) {
+        try {
+          recognition.start()
+        } catch {
+          // Ignore errors when restarting
+        }
+      }
+    }
+    
+    try {
+      recognition.start()
+      speechRecognitionRef.current = recognition
+    } catch (error) {
+      console.error('[v0] Failed to start speech recognition:', error)
+    }
+  }, [onRealtimeTranscript])
+
+  const stopSpeechRecognition = useCallback(() => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop()
+      speechRecognitionRef.current = null
+    }
+  }, [])
 
   const stopRecording = useCallback(() => {
+    console.log('[v0] VoiceRecorder stopRecording called')
+    console.log('[v0] mediaRecorder state:', mediaRecorderRef.current?.state)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      console.log('[v0] Calling mediaRecorder.stop()')
       mediaRecorderRef.current.stop()
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
     }
-  }, [])
+    stopSpeechRecognition()
+  }, [stopSpeechRecognition])
 
   const startRecording = useCallback(async () => {
+    setErrorMessage(null)
+    
+    // Check if browser supports getUserMedia
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const error = 'Your browser does not support audio recording. Please use a modern browser like Chrome, Firefox, or Edge.'
+      setErrorMessage(error)
+      onError?.(error)
+      return
+    }
+
     try {
       audioChunksRef.current = []
       
@@ -47,14 +176,21 @@ export function VoiceRecorder({
           sampleRate: 16000
         } 
       })
+      
+      setPermissionState('granted')
       streamRef.current = stream
       
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') 
-          ? 'audio/webm' 
-          : 'audio/mp4'
-      })
+      // Determine supported mime type
+      let mimeType = 'audio/webm'
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4'
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg'
+        }
+      }
       
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
       mediaRecorderRef.current = mediaRecorder
 
       mediaRecorder.ondataavailable = (event) => {
@@ -64,19 +200,61 @@ export function VoiceRecorder({
       }
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { 
-          type: mediaRecorder.mimeType 
-        })
+        console.log('[v0] VoiceRecorder mediaRecorder.onstop triggered')
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType })
+        console.log('[v0] VoiceRecorder created audioBlob, size:', audioBlob.size)
         onStopRecording(audioBlob)
+        console.log('[v0] VoiceRecorder called onStopRecording')
       }
 
-      mediaRecorder.start()
+      mediaRecorder.onerror = (event) => {
+        const error = `Recording error: ${(event as ErrorEvent).message || 'Unknown error'}`
+        setErrorMessage(error)
+        onError?.(error)
+        stopRecording()
+      }
+
+      // Start recording with timeslice to get data periodically
+      console.log('[v0] VoiceRecorder starting mediaRecorder')
+      mediaRecorder.start(1000)
       onStartRecording()
+      console.log('[v0] VoiceRecorder recording started')
+      
+      // Start real-time speech recognition
+      startSpeechRecognition()
     } catch (error) {
-      console.error('[v0] Error starting recording:', error)
-      alert('Could not access microphone. Please ensure you have granted permission.')
+      let errorMsg = 'Could not access microphone.'
+      
+      if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+          case 'PermissionDeniedError':
+            errorMsg = 'Microphone permission denied. Please allow microphone access in your browser settings and reload the page.'
+            setPermissionState('denied')
+            break
+          case 'NotFoundError':
+          case 'DevicesNotFoundError':
+            errorMsg = 'No microphone found. Please connect a microphone and try again.'
+            break
+          case 'NotReadableError':
+          case 'TrackStartError':
+            errorMsg = 'Microphone is in use by another application. Please close other apps using the microphone.'
+            break
+          case 'OverconstrainedError':
+            errorMsg = 'Microphone does not meet requirements. Please try a different microphone.'
+            break
+          case 'SecurityError':
+            errorMsg = 'Microphone access blocked due to security settings. Please use HTTPS.'
+            break
+          default:
+            errorMsg = `Microphone error: ${error.message}`
+        }
+      }
+      
+      setErrorMessage(errorMsg)
+      onError?.(errorMsg)
     }
-  }, [onStartRecording, onStopRecording])
+  }, [onStartRecording, onStopRecording, onError, stopRecording])
 
   // Auto-stop after max duration
   useEffect(() => {
@@ -161,20 +339,50 @@ export function VoiceRecorder({
       </div>
 
       {/* Status text */}
-      <div className="text-center">
-        {isProcessing ? (
+      <div className="text-center max-w-sm">
+        {errorMessage ? (
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-4 h-4" />
+              <p className="font-medium">Error</p>
+            </div>
+            <p className="text-sm text-destructive/80">{errorMessage}</p>
+            {permissionState === 'denied' && (
+              <p className="text-xs text-muted-foreground mt-1">
+                To fix: Click the lock/camera icon in your browser&apos;s address bar and allow microphone access.
+              </p>
+            )}
+          </div>
+        ) : isProcessing ? (
           <p className="text-muted-foreground">Processing audio...</p>
         ) : isRecording ? (
           <div className="flex flex-col items-center gap-1">
             <p className="text-destructive font-medium">Recording...</p>
             <p className="text-sm text-muted-foreground">
-              {recordingTime}s / {maxDuration}s
+              {formatTime(recordingTime)} / {formatTime(maxDuration)}
+            </p>
+          </div>
+        ) : permissionState === 'denied' ? (
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-destructive font-medium">Microphone access denied</p>
+            <p className="text-xs text-muted-foreground">
+              Please allow microphone access in your browser settings
             </p>
           </div>
         ) : (
-          <p className="text-muted-foreground">Click to start recording</p>
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-muted-foreground">Click to start recording</p>
+            <p className="text-xs text-muted-foreground">Up to {formatTime(maxDuration)}</p>
+          </div>
         )}
       </div>
     </div>
   )
+}
+
+// Format seconds to mm:ss
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
