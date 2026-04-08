@@ -162,7 +162,20 @@ export function VoiceAgent() {
         transcript = realtimeText
       } else if (asrKey && asrAssignment) {
         console.log('[v0] Using ASR service:', asrAssignment.provider)
-        transcript = await transcribeAudio(audioBlob, asrKey, asrAssignment.provider, asrAssignment.model)
+        try {
+          transcript = await transcribeAudio(audioBlob, asrKey, asrAssignment.provider, asrAssignment.model)
+          console.log('[v0] ASR transcription successful')
+        } catch (asrError) {
+          console.log('[v0] ASR failed, falling back to realtime:', asrError)
+          store.addLog(`ASR failed: ${asrError instanceof Error ? asrError.message : 'Unknown'}. Using realtime transcript.`, 'warning')
+          // Fall back to realtime transcript if available
+          if (realtimeText && realtimeText.trim()) {
+            transcript = realtimeText
+            console.log('[v0] Using realtime transcript as fallback')
+          } else {
+            throw asrError // Re-throw if no fallback available
+          }
+        }
       } else {
         // No ASR key and no realtime transcript - check realtime again or use mock
         if (realtimeText && realtimeText.trim()) {
