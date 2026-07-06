@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "AI Memory Atlas Capture",
+  "version": "0.1.0",
+  "description": "Capture prompts submitted on supported AI pages into the local AI Memory Atlas.",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "http://127.0.0.1:3000/*",
+    "http://localhost:3000/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://cursor.com/*",
+    "https://*.openclaw.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://cursor.com/*",
+        "https://*.openclaw.com/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://cursor.com/*",
+        "https://*.openclaw.com/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AI Memory Atlas Capture",
+    "default_popup": "popup.html"
+  }
+}

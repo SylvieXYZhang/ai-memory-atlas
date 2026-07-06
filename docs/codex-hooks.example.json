@@ -1,0 +1,8 @@
+{
+  "hooks": [
+    {
+      "event": "conversation",
+      "command": "node \"C:\\Users\\xiaoyinzhang\\Downloads\\ai-memory-atlas-main (1)\\ai-memory-atlas-main\\scripts\\hooks\\codex-hook.js\""
+    }
+  ]
+}

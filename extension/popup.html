@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 14px;
+        background: #050505;
+        color: #f5f5f5;
+        font: 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+      p {
+        margin: 0 0 10px;
+        color: #a3a3a3;
+        line-height: 1.4;
+      }
+      .status {
+        border: 1px solid #1f3d34;
+        border-radius: 8px;
+        background: #062017;
+        padding: 10px;
+        color: #a7f3d0;
+      }
+      .status.warn {
+        border-color: #513f12;
+        background: #241a05;
+        color: #fde68a;
+      }
+      .status.bad {
+        border-color: #5b1b1b;
+        background: #240808;
+        color: #fecaca;
+      }
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        margin-top: 8px;
+        padding: 10px 12px;
+        background: #34d399;
+        color: #04110c;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #1f2937;
+        color: #f5f5f5;
+      }
+      code {
+        color: #67e8f9;
+        word-break: break-all;
+      }
+      ul {
+        padding-left: 18px;
+        margin: 10px 0 0;
+        color: #d4d4d4;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AI Memory Atlas Capture</h1>
+    <p>Captures prompts when you submit them on supported AI pages. It does not monitor global keyboard input.</p>
+    <div id="status" class="status">
+      Checking local AI Memory Atlas...
+    </div>
+    <button id="test">Test local app</button>
+    <button id="capture">Capture current prompt now</button>
+    <button id="open" class="secondary">Open AI Memory Atlas</button>
+    <ul>
+      <li>Keep the AI Memory Atlas dev server running.</li>
+      <li>Open ChatGPT, Claude, Cursor, or OpenClaw.</li>
+      <li>Type in the AI input box and send the prompt.</li>
+      <li>The submitted prompt is added to your memory graph.</li>
+    </ul>
+    <script src="popup.js"></script>
+  </body>
+</html>

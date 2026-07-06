@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\xiaoyinzhang\\Downloads\\ai-memory-atlas-main (1)\\ai-memory-atlas-main\\scripts\\hooks\\claude-code-hook.js\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\xiaoyinzhang\\Downloads\\ai-memory-atlas-main (1)\\ai-memory-atlas-main\\scripts\\hooks\\claude-code-hook.js\""
+          }
+        ]
+      }
+    ]
+  }
+}

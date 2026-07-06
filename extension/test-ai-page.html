@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Second Brain Extension Test AI Page</title>
+    <style>
+      body {
+        max-width: 760px;
+        margin: 40px auto;
+        background: #050505;
+        color: #f5f5f5;
+        font: 14px system-ui, sans-serif;
+      }
+      article {
+        border: 1px solid #262626;
+        border-radius: 10px;
+        padding: 14px;
+        margin: 12px 0;
+        background: #0f0f0f;
+      }
+      textarea {
+        width: 100%;
+        min-height: 88px;
+        box-sizing: border-box;
+        border-radius: 8px;
+        border: 1px solid #333;
+        background: #090909;
+        color: #fff;
+        padding: 10px;
+      }
+      button {
+        margin-top: 10px;
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #34d399;
+        color: #04110c;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mock AI Chat Page</h1>
+    <p>This file is a local extension test fixture. It mimics an AI app DOM and network call.</p>
+    <article data-message-author-role="user">
+      I want Second Brain to fetch user input and AI output automatically.
+    </article>
+    <article data-message-author-role="assistant">
+      Use a browser extension content script for DOM capture, plus a page-level network hook for fetch/XHR AI responses.
+    </article>
+
+    <textarea id="prompt">Use OpenClaw to inspect a workflow and return agent memory suggestions.</textarea>
+    <button id="send">Simulate AI fetch</button>
+    <pre id="result"></pre>
+
+    <script>
+      document.getElementById('send').addEventListener('click', async () => {
+        const prompt = document.getElementById('prompt').value
+        const response = await fetch('/api/mock-chat-completion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await response.json()
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2)
+      })
+    </script>
+  </body>
+</html>
